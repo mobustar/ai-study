@@ -1,0 +1,1035 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Month 5: RNN・Attention・Transformer — AI学習参考資料</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
+<link rel="stylesheet" href="ai_math_style.css">
+</head>
+<body>
+<div id="progress-bar"></div>
+<div class="container">
+
+<nav class="site-nav">
+  <a href="index.html">🏠 ホーム</a>
+  <span class="sep">/</span>
+  <a href="month1.html">Month 1</a>
+  <span class="sep">/</span>
+  <a href="month2.html">Month 2</a>
+  <span class="sep">/</span>
+  <a href="month3.html">Month 3</a>
+  <span class="sep">/</span>
+  <a href="month4.html">Month 4</a>
+  <span class="sep">/</span>
+  <a href="month5.html" class="current">Month 5</a>
+  <span class="sep">/</span>
+  <a href="month6.html">Month 6</a>
+</nav>
+
+<div class="page-header">
+  <span class="month-badge" style="background:var(--month5);color:#fff;">MONTH 5</span>
+  <h1>RNN · Attention · Transformer</h1>
+</div>
+
+<div class="page-toc">
+  <h3>このページの内容</h3>
+  <a href="#t-rnn">RNNとLSTM（Day 78–87）</a>
+  <a href="#t-attention">Attention機構（Day 88–92）</a>
+  <a href="#t-transformer">Transformer（Day 93–102）</a>
+  <a href="#t-modern-llm">現代LLMのアーキテクチャ — RoPE・GQA・SwiGLU・MoE</a>
+  <a href="#t-flash">Flash Attention — メモリと速度の革命</a>
+</div>
+
+<!-- RNN/LSTM -->
+<div class="topic" id="t-rnn" style="border-left-color:var(--month5)">
+  <h3>RNNとLSTM <span class="day-tag">Day 78–87</span></h3>
+  <div class="topic-body">
+
+  <p class="topic-lead">画像はCNNで処理できます。では「文章」や「時系列データ」はどう扱えばよいでしょうか？「私は東京で生まれ、大阪で育ち、京都で____」を予測するには、前の文脈を「記憶」しながら処理する必要があります。これがRNNの発想です。しかし普通のRNNには「記憶が消える（勾配消失）」という致命的な問題があり、それを解決したのがLSTMです。</p>
+
+  <div class="visual">
+    <div class="label">RNN のイメージ：「記憶を持ちながら本を読む人」</div>
+    <p>RNNは文章を1単語ずつ読みながら「記憶（隠れ状態）」を更新し続けます。前の文脈を覚えていないと適切な続きが予測できません。ただし記憶容量に限界があり、文章が長くなると最初の情報は「上書き」されて忘れてしまいます（勾配消失問題）。</p>
+  </div>
+
+  <h4>RNNの再帰構造を手で追う</h4>
+  <div class="math-block">
+    $$\mathbf{h}_t = \tanh(W_{xh}\mathbf{x}_t + W_{hh}\mathbf{h}_{t-1} + \mathbf{b}_h)$$
+  </div>
+
+  <div class="code-block">
+    <span class="code-label">Python — RNN セルを NumPy で手実装する</span>
+    <pre>import numpy as np
+
+# モデルサイズ
+input_size  = 4   # 入力次元（例：ワンホットの語彙数）
+hidden_size = 8   # 隠れ状態のサイズ
+
+# パラメータ初期化
+Wxh = np.random.randn(input_size, hidden_size) * 0.01
+Whh = np.random.randn(hidden_size, hidden_size) * 0.01
+bh  = np.zeros(hidden_size)
+
+# 「猫が」「魚を」「食べた」の3ステップ
+tokens = [np.array([1,0,0,0]),   # "猫が"
+          np.array([0,1,0,0]),   # "魚を"
+          np.array([0,0,1,0])]   # "食べた"
+
+h = np.zeros(hidden_size)   # 初期隠れ状態
+
+for t, x in enumerate(tokens):
+    h = np.tanh(x @ Wxh + h @ Whh + bh)   # 再帰的更新
+    print(f"t={t}: h.shape={h.shape}, h[:3]={h[:3].round(4)}")</pre>
+  </div>
+
+  <h4>勾配消失の数学的理解</h4>
+  <p>BPTT（Backpropagation Through Time）で $T$ ステップ前の影響を計算すると：</p>
+  <div class="math-block">
+    $$\frac{\partial \mathbf{h}_T}{\partial \mathbf{h}_0} = \prod_{t=1}^{T} \frac{\partial \mathbf{h}_t}{\partial \mathbf{h}_{t-1}} = \prod_{t=1}^{T} \text{diag}(1-\mathbf{h}_t^2) \cdot W_{hh}$$
+  </div>
+  <p>$W_{hh}$ の最大特異値が $&lt;1$ なら勾配は指数的に減衰（消失）、$&gt;1$ なら指数的に増大（爆発）します。$T=100$ では $0.99^{100} \approx 0.37$（最大値でも37%まで減衰）。</p>
+
+  <h4>LSTM — 2種類のメモリで長期記憶を実現する</h4>
+
+  <div class="visual">
+    <div class="label">LSTMのイメージ：「2種類のメモ帳を持つ人」</div>
+    <p>LSTMには「長期記憶ノート（セル状態 $\mathbf{c}_t$）」と「作業メモ（隠れ状態 $\mathbf{h}_t$）」があります。<br>
+    ・<strong>忘却ゲート</strong>：古いメモの「どこを消すか」を決める消しゴム<br>
+    ・<strong>入力ゲート</strong>：新しい情報の「どれを書き込むか」を決めるペン<br>
+    ・<strong>出力ゲート</strong>：長期ノートから「今必要な部分だけ取り出す」付箋</p>
+  </div>
+
+  <div class="math-block">
+    $$\begin{aligned}
+    \mathbf{f}_t &= \sigma(W_f[\mathbf{h}_{t-1}, \mathbf{x}_t] + \mathbf{b}_f) & \text{（忘却ゲート）} \\
+    \mathbf{i}_t &= \sigma(W_i[\mathbf{h}_{t-1}, \mathbf{x}_t] + \mathbf{b}_i) & \text{（入力ゲート）} \\
+    \tilde{\mathbf{c}}_t &= \tanh(W_c[\mathbf{h}_{t-1}, \mathbf{x}_t] + \mathbf{b}_c) & \text{（候補値）} \\
+    \mathbf{c}_t &= \mathbf{f}_t \odot \mathbf{c}_{t-1} + \mathbf{i}_t \odot \tilde{\mathbf{c}}_t & \text{（セル状態更新）} \\
+    \mathbf{o}_t &= \sigma(W_o[\mathbf{h}_{t-1}, \mathbf{x}_t] + \mathbf{b}_o) & \text{（出力ゲート）} \\
+    \mathbf{h}_t &= \mathbf{o}_t \odot \tanh(\mathbf{c}_t) & \text{（隠れ状態）}
+    \end{aligned}$$
+  </div>
+
+  <div class="math-note">セル状態の更新式 $\mathbf{c}_t = \mathbf{f}_t \odot \mathbf{c}_{t-1} + \mathbf{i}_t \odot \tilde{\mathbf{c}}_t$ は、ResNetのskip connectionと同じ「加算による情報ハイウェイ」構造です。$\mathbf{f}_t \approx 1$ のとき勾配がそのまま伝播し、勾配消失が起きません。</div>
+
+  <div class="code-block">
+    <span class="code-label">Python — PyTorch の LSTM で系列分類モデルを作る</span>
+    <pre>import torch
+import torch.nn as nn
+
+# ─── 基本的な LSTM の使い方と出力形状の確認 ───
+lstm = nn.LSTM(
+    input_size=16,    # 各ステップの入力次元（例：単語埋め込みの次元）
+    hidden_size=64,   # 隠れ状態のサイズ（記憶の容量）
+    num_layers=2,     # LSTM を2段に重ねる（深いLSTM）
+    batch_first=True, # (batch, seq, features) の順 ← 推奨
+    dropout=0.1,      # 層間にDropout（過学習防止）
+    bidirectional=False  # 双方向にする場合は True
+)
+
+# バッチ8、シーケンス長20、入力次元16
+x = torch.randn(8, 20, 16)
+
+# 順伝播
+out, (h_n, c_n) = lstm(x)
+
+# 出力の形状を理解する
+print(f"out shape : {out.shape}")   # → [8, 20, 64]
+#  ↑ 全ステップの出力（各タイムステップの隠れ状態）
+
+print(f"h_n shape : {h_n.shape}")  # → [2, 8, 64]
+#  ↑ [num_layers, batch, hidden] = 各層の最終ステップの隠れ状態
+
+print(f"c_n shape : {c_n.shape}")  # → [2, 8, 64]
+#  ↑ 各層の最終ステップのセル状態（長期記憶）
+
+# 最終ステップの出力（最上位層の最後のタイムステップ）
+last_step = out[:, -1, :]   # または h_n[-1]
+print(f"最終ステップ: {last_step.shape}")  # → [8, 64]
+
+# ─── 実用的な使い方：感情分類モデル ───
+class SentimentLSTM(nn.Module):
+    """LSTM を使った文章の感情分類（ポジティブ/ネガティブ）"""
+    def __init__(self, vocab_size=10000, embed_dim=128,
+                 hidden_dim=256, n_layers=2, n_classes=2):
+        super().__init__()
+        # 単語ID → 埋め込みベクトル
+        self.embed   = nn.Embedding(vocab_size, embed_dim, padding_idx=0)
+        # 系列を処理する LSTM
+        self.lstm    = nn.LSTM(embed_dim, hidden_dim, n_layers,
+                               batch_first=True, dropout=0.3)
+        # 最終ステップの出力 → クラス確率
+        self.classifier = nn.Sequential(
+            nn.Dropout(0.5),
+            nn.Linear(hidden_dim, n_classes)  # 256 → 2（ポジ/ネガ）
+        )
+
+    def forward(self, token_ids):
+        # token_ids: (batch, seq_len) — 単語IDのシーケンス
+        emb = self.embed(token_ids)           # → (B, T, embed_dim)
+        out, (h_n, _) = self.lstm(emb)        # → out: (B, T, hidden)
+        # 最後のタイムステップを使って分類
+        logits = self.classifier(h_n[-1])     # → (B, n_classes)
+        return logits
+
+model = SentimentLSTM()
+x_tokens = torch.randint(1, 10000, (4, 50))  # 4文、各50トークン
+print(model(x_tokens).shape)  # → [4, 2]  （4文のポジ/ネガスコア）
+print(f"総パラメータ数: {sum(p.numel() for p in model.parameters()):,}")
+# → 約 4.0M パラメータ</pre>
+  </div>
+
+  <div class="matome">
+    <span class="matome-label">本節のまとめ</span>
+    <ul>
+      <li>RNNは「隠れ状態」で系列情報を記憶するが、長い系列では勾配消失で記憶が消える</li>
+      <li>LSTMは「セル状態（長期記憶）」と「隠れ状態（短期記憶）」の2種類で問題を解決</li>
+      <li>ゲート機構（忘却・入力・出力）が「何を記憶し、何を忘れるか」を学習する</li>
+      <li>セル状態の加算更新はResNetのSkip Connectionと同じ発想</li>
+    </ul>
+  </div>
+
+  </div>
+</div>
+
+<!-- Attention -->
+<div class="topic" id="t-attention" style="border-left-color:var(--month5)">
+  <h3>Attention機構 <span class="day-tag">Day 88–92</span></h3>
+  <div class="topic-body">
+
+  <p class="topic-lead">LSTMは長期記憶の問題を解決しましたが、まだ「順番に処理する」という制約があります。翻訳で「I ate pizza in Italy」を処理するとき、「Italy」は最初から参照できればいいですが、LSTMはそこに到達するまで全ステップを待たなければなりません。Attentionは「全トークンを同時に参照する」メカニズムで、この制約を解消します。</p>
+
+  <div class="visual">
+    <div class="label">Attention のイメージ：「図書館の司書と本棚の検索」</div>
+    <p>図書館で本を探すとき：<br>
+    ・<strong>Query（Q）</strong>：あなたが司書に渡す「検索ワードのメモ」<br>
+    ・<strong>Key（K）</strong>：本棚にある各本の「背表紙タイトル」<br>
+    ・<strong>Value（V）</strong>：各本の「実際の中身」<br><br>
+    あなたのメモに最も近いタイトルの本を優先的に取り出し、関連度（ソフトマックス後の重み）に応じてブレンドして提供します。</p>
+  </div>
+
+  <h4>Scaled Dot-Product Attention を手実装する</h4>
+  <div class="math-block">
+    $$\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^T}{\sqrt{d_k}}\right) V$$
+  </div>
+  <div class="code-block">
+    <span class="code-label">Python — Scaled Dot-Product Attention の完全実装（スケーリングの必要性も検証）</span>
+    <pre>import numpy as np
+
+def softmax(x, axis=-1):
+    """数値安定な softmax（最大値を引いてオーバーフローを防ぐ）"""
+    e = np.exp(x - x.max(axis=axis, keepdims=True))
+    return e / e.sum(axis=axis, keepdims=True)
+
+def scaled_dot_product_attention(Q, K, V, mask=None):
+    """
+    Q: (T_q, d_k) — クエリ（「何を探しているか」）
+    K: (T_k, d_k) — キー（「何を持っているか」）
+    V: (T_k, d_v) — バリュー（「実際に取り出す情報」）
+    mask: (T_q, T_k) — True の位置のみ注意できる（Falseを-∞に）
+    """
+    d_k = Q.shape[-1]   # キー/クエリの次元数
+
+    # ① Q と K の内積でスコアを計算（どのトークンに注目するか）
+    scores = Q @ K.T                      # shape: (T_q, T_k)
+
+    # ② スケーリング（d_k=64 なら √64=8 で割る）
+    scores = scores / np.sqrt(d_k)        # 分散を 1 に正規化
+
+    # ③ マスク適用（-∞ にすることで Softmax 後に 0 になる）
+    if mask is not None:
+        scores = np.where(mask, scores, -1e9)   # -1e9 ≈ -∞
+
+    # ④ Softmax で注意重みに変換（行ごとに合計=1の確率分布）
+    attn_weights = softmax(scores, axis=-1)  # shape: (T_q, T_k)
+
+    # ⑤ バリュー V の重み付き平均（「どの本の情報を何割取るか」）
+    output = attn_weights @ V               # shape: (T_q, d_v)
+
+    return output, attn_weights
+
+# ─── スケーリングなしで何が起きるか実験 ───
+np.random.seed(42)
+d_k = 64    # GPT-2 Small: d_model=768, heads=12 → d_k = 64
+T   = 5     # シーケンス長（5トークン）
+
+Q = np.random.randn(T, d_k)
+K = np.random.randn(T, d_k)
+V = np.random.randn(T, d_k)
+
+# スケールなし
+scores_unscaled  = Q @ K.T
+weights_unscaled = softmax(scores_unscaled)[0]   # 1つ目のクエリの重み
+
+# スケールあり
+scores_scaled    = Q @ K.T / np.sqrt(d_k)
+weights_scaled   = softmax(scores_scaled)[0]
+
+print("スケールなし Attention 重み:", weights_unscaled.round(4))
+# 例: [0.9997, 0.0002, 0.0001, 0.0000, 0.0000] ← ほぼ one-hot！
+# → 勾配がほぼゼロになり学習が止まる
+
+print("スケール後  Attention 重み:", weights_scaled.round(4))
+# 例: [0.2831, 0.1523, 0.2201, 0.1745, 0.1700] ← 適切に分散
+
+# ─── Causal Mask（GPT型：未来トークンを見ない）───
+causal_mask = np.tril(np.ones((T, T), dtype=bool))
+# [[T,F,F,F,F],
+#  [T,T,F,F,F],
+#  [T,T,T,F,F],
+#  [T,T,T,T,F],
+#  [T,T,T,T,T]]
+
+out, w = scaled_dot_product_attention(Q, K, V, mask=causal_mask)
+print("\nCausal Mask 後の注意重み（未来=0）:")
+for i, row in enumerate(w):
+    print(f"  トークン{i}: {row.round(3)}")
+# トークン0は自分だけ見られる
+# トークン4は全5トークンを見られる</pre>
+  </div>
+
+  <h4>なぜ $\sqrt{d_k}$ でスケールするのか</h4>
+  <p>各要素が $\mathcal{N}(0,1)$ なら $d_k$ 次元ベクトルの内積の分散は $d_k$ です。$d_k=64$ なら標準偏差は $8$ になり、内積値が数十に達します。Softmax の入力が大きいと $\exp$ で値が爆発し、出力がほぼ one-hot になります。これで勾配がほぼゼロになり学習が止まります。$\sqrt{64}=8$ で割れば分散が1に戻ります。</p>
+
+  <div class="training">
+    <div class="label">学習時のAttention — Causal Mask</div>
+    <p>GPT系（Decoder-only）では Teacher Forcing で全トークンを並列処理しますが、「未来のトークンを見てはいけない」制約が必要です。下三角マスクを加算することで実現します：</p>
+    <div class="math-block">$$\text{score}_{ij} = \begin{cases} \mathbf{q}_i \cdot \mathbf{k}_j / \sqrt{d_k} & (j \leq i) \\ -\infty & (j > i) \end{cases}$$</div>
+    <p>$-\infty$ を入力した位置は Softmax 後に $0$ になるため、未来トークンへの注意が完全にゼロになります。</p>
+  </div>
+  <div class="inference">
+    <div class="label">推論時のAttention — KVキャッシュ</div>
+    <p>テキスト生成では1トークンずつ逐次生成します。過去の K, V をメモリに保持（キャッシュ）することで再計算を回避します。キャッシュなし: ステップ $t$ での計算量 $O(t^2)$。キャッシュあり: 追加1トークン分のみ計算 → $O(t)$ に削減。128k トークンでのキャッシュサイズは数十GBに達します。</p>
+  </div>
+
+  <div class="matome">
+    <span class="matome-label">本節のまとめ</span>
+    <ul>
+      <li>Attention = Query・Key・Value。Q×Kのスコアで「どこを見るか」を決め、Vを重み付き平均する</li>
+      <li>$\sqrt{d_k}$ でスケールしないと内積が大きくなりすぎてSoftmaxが飽和する</li>
+      <li>Causal Maskで未来トークンへのAttentionをゼロにしてGPT型の学習を実現</li>
+      <li>KVキャッシュで推論時の計算を $O(T^2)$ → $O(T)$ に削減</li>
+    </ul>
+  </div>
+
+  </div>
+</div>
+
+<!-- Transformer -->
+<div class="topic" id="t-transformer" style="border-left-color:var(--month5)">
+  <h3>Transformer <span class="day-tag">Day 93–102</span></h3>
+  <div class="topic-body">
+
+  <p class="topic-lead">2017年の論文「Attention Is All You Need」はニューラルネットワークの歴史を大きく変えました。RNNを捨て、Attentionだけで系列を処理するTransformerは、並列処理が可能なため大規模データでの学習に大きな優位性があります。現代のLLM（GPT、Claude、Gemini等）はすべてこのアーキテクチャに基づいています。</p>
+
+  <div class="visual">
+    <div class="label">Transformer のイメージ：「全員参加のビデオ会議」</div>
+    <p>RNNが「一人ずつ順番に話す電話リレー」なら、Transformerは「全員が同時に全員と話せるビデオ会議」です。「田中さんが昨日東京で___」という文で「___」を予測するとき、TransformerはどんなRNNよりも素早く「東京」「昨日」「田中」全部を同時に参照できます。Multi-Head とは「複数の会議室で同時に異なるテーマを議論する」イメージです。</p>
+  </div>
+
+  <h4>Multi-Head Attention</h4>
+  <div class="math-block">
+    $$\text{MultiHead}(Q, K, V) = \text{Concat}(\text{head}_1, \ldots, \text{head}_h) W^O, \quad \text{head}_i = \text{Attention}(QW_i^Q, KW_i^K, VW_i^V)$$
+  </div>
+  <div class="code-block">
+    <span class="code-label">Python — Multi-Head Attention の実装（PyTorch）</span>
+    <pre>import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+class MultiHeadAttention(nn.Module):
+    def __init__(self, d_model=512, num_heads=8):
+        super().__init__()
+        self.d_k = d_model // num_heads   # = 64
+        self.h   = num_heads
+        self.W_q = nn.Linear(d_model, d_model)
+        self.W_k = nn.Linear(d_model, d_model)
+        self.W_v = nn.Linear(d_model, d_model)
+        self.W_o = nn.Linear(d_model, d_model)
+
+    def forward(self, x, mask=None):
+        B, T, D = x.shape
+        # 線形変換 → ヘッドに分割
+        Q = self.W_q(x).view(B, T, self.h, self.d_k).transpose(1, 2)
+        K = self.W_k(x).view(B, T, self.h, self.d_k).transpose(1, 2)
+        V = self.W_v(x).view(B, T, self.h, self.d_k).transpose(1, 2)
+
+        # Scaled Dot-Product Attention
+        scores = Q @ K.transpose(-2, -1) / (self.d_k ** 0.5)
+        if mask is not None:
+            scores = scores.masked_fill(mask == 0, float('-inf'))
+        attn = F.softmax(scores, dim=-1) @ V
+
+        # 結合
+        out = attn.transpose(1, 2).contiguous().view(B, T, D)
+        return self.W_o(out)</pre>
+  </div>
+
+  <h4>Transformerブロックの全体構造</h4>
+  <div class="math-block">
+    $$\begin{aligned}
+    \mathbf{z}' &= \text{LayerNorm}(\mathbf{x} + \text{MultiHead}(\mathbf{x}, \mathbf{x}, \mathbf{x})) \\
+    \mathbf{z} &= \text{LayerNorm}(\mathbf{z}' + \text{FFN}(\mathbf{z}'))
+    \end{aligned}$$
+  </div>
+  <p>FFN（Feed-Forward Network）は位置ごとに独立に適用される2層MLP：$\text{FFN}(\mathbf{x}) = W_2 \cdot \text{GELU}(W_1 \mathbf{x} + \mathbf{b}_1) + \mathbf{b}_2$</p>
+
+  <h4>TransformerBlock を完全実装する</h4>
+  <p>Multi-Head Attention + Add&Norm + FFN + Add&Norm の4ステップが1ブロックです：</p>
+  <div class="code-block">
+    <span class="code-label">Python — TransformerBlock の PyTorch 実装（形状コメント付き）</span>
+    <pre>import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+class TransformerBlock(nn.Module):
+    """GPT型の Decoder Block（Pre-LN 構造）
+
+    データの流れ:
+    x → LN → MHA → + x（残差）→ LN → FFN → + x（残差）→ out
+    """
+    def __init__(self, d_model=512, num_heads=8, d_ff=2048, dropout=0.1):
+        super().__init__()
+        # ① Multi-Head Self-Attention
+        self.attn   = nn.MultiheadAttention(d_model, num_heads,
+                                            dropout=dropout, batch_first=True)
+        # ② Feed-Forward Network（隠れ層を d_model × 4 に拡大するのが標準）
+        self.ffn    = nn.Sequential(
+            nn.Linear(d_model, d_ff),   # 512 → 2048（4倍に拡大）
+            nn.GELU(),                   # Transformer 標準の活性化関数
+            nn.Dropout(dropout),
+            nn.Linear(d_ff, d_model),   # 2048 → 512（元の次元に戻す）
+        )
+        # ③ Layer Normalization（Pre-LN: MHA/FFN の前に適用）
+        self.ln1    = nn.LayerNorm(d_model)
+        self.ln2    = nn.LayerNorm(d_model)
+        self.drop   = nn.Dropout(dropout)
+
+    def forward(self, x, causal_mask=None):
+        # x: (batch, seq_len, d_model)
+        B, T, D = x.shape
+
+        # ─ Self-Attention ブランチ ─
+        # Pre-LN: Attention 前に LayerNorm（Post-LN より学習安定）
+        x_norm = self.ln1(x)              # (B, T, D)
+        # nn.MultiheadAttention は (q, k, v) を受け取る
+        # Self-Attention なので q=k=v=x_norm
+        attn_out, attn_weights = self.attn(
+            x_norm, x_norm, x_norm,
+            attn_mask=causal_mask,        # 下三角マスク（GPT型）
+            need_weights=True             # attention重みを返す
+        )
+        x = x + self.drop(attn_out)       # 残差接続（Skip Connection）
+
+        # ─ Feed-Forward ブランチ ─
+        x = x + self.drop(self.ffn(self.ln2(x)))  # Pre-LN + 残差接続
+
+        return x, attn_weights            # (B, T, D), (B, T, T)
+
+
+# ─── 動作確認 ───
+block = TransformerBlock(d_model=512, num_heads=8, d_ff=2048)
+x = torch.randn(4, 32, 512)   # (batch=4, seq_len=32, d_model=512)
+
+# Causal mask（未来トークンを見ない三角マスク）
+# nn.MultiheadAttention は True の位置を「無視する」フォーマット
+T = 32
+causal = torch.triu(torch.ones(T, T, dtype=torch.bool), diagonal=1)
+# causal[i][j] = True if j > i （未来は True で無視）
+
+out, w = block(x, causal_mask=causal)
+print(f"入力:     {x.shape}")     # → [4, 32, 512]
+print(f"出力:     {out.shape}")   # → [4, 32, 512]  （同じ形状）
+print(f"Attention重み: {w.shape}")  # → [4, 32, 32]
+
+# パラメータ数を確認
+params = sum(p.numel() for p in block.parameters())
+print(f"TransformerBlock パラメータ数: {params:,}")
+# → 3,152,384  (d_model=512, heads=8, d_ff=2048)
+
+# 参考: GPT-2 Small は 12ブロック × 各 ~2.4M ≈ 28M パラメータ
+# （Embedding と出力層を含む総計 117M）</pre>
+  </div>
+
+  <h4>位置エンコーディング</h4>
+  <p>TransformerはAttentionで全トークンを同時に処理するため、「どのトークンが何番目か」という位置情報を別途追加する必要があります：</p>
+  <div class="math-block">
+    $$PE_{(pos, 2i)} = \sin\left(\frac{pos}{10000^{2i/d}}\right), \quad PE_{(pos, 2i+1)} = \cos\left(\frac{pos}{10000^{2i/d}}\right)$$
+  </div>
+
+  <div class="code-block">
+    <span class="code-label">Python — Sinusoidal 位置エンコーディングの実装と性質確認</span>
+    <pre>import numpy as np
+import torch
+
+def sinusoidal_pe(seq_len, d_model):
+    """
+    Attention Is All You Need の位置エンコーディング
+    各次元に異なる周波数のsin/cosを割り当てる
+    """
+    pos = np.arange(seq_len)[:, np.newaxis]   # (T, 1)
+    # 2i番目の次元の周波数: 1 / 10000^(2i/d_model)
+    i   = np.arange(d_model // 2)[np.newaxis, :]  # (1, d/2)
+    angles = pos / (10000 ** (2 * i / d_model))    # (T, d/2)
+
+    pe = np.zeros((seq_len, d_model))
+    pe[:, 0::2] = np.sin(angles)   # 偶数次元: sin
+    pe[:, 1::2] = np.cos(angles)   # 奇数次元: cos
+    return pe
+
+# 512次元、最大100トークンの位置エンコーディング
+pe = sinusoidal_pe(seq_len=100, d_model=512)
+print(f"PE shape: {pe.shape}")  # → (100, 512)
+
+# 各位置は固有のベクトルになっている
+# 近い位置ほどベクトルが似ている（Attention で相対位置を表現できる）
+pos0_and_pos1 = pe[0] @ pe[1] / (np.linalg.norm(pe[0]) * np.linalg.norm(pe[1]))
+pos0_and_pos50 = pe[0] @ pe[50] / (np.linalg.norm(pe[0]) * np.linalg.norm(pe[50]))
+print(f"位置0 と位置1  のコサイン類似度: {pos0_and_pos1:.4f}")   # ≈ 0.999（近い）
+print(f"位置0 と位置50 のコサイン類似度: {pos0_and_pos50:.4f}") # ≈ 0.5  （遠い）
+
+# 現代LLMとの違い：学習可能な位置埋め込み（nn.Embedding）や
+# RoPE（Rotary PE）の方が長文処理に優れる</pre>
+  </div>
+  <div class="ai-connection">
+    <div class="label">現代の位置エンコーディング：RoPE</div>
+    <p>LLaMA・Qwen等の現代LLMは <strong>RoPE（Rotary Position Embedding）</strong>を使います。Q, Kベクトルに位置に応じた回転行列を掛けることで、Attentionスコアに相対位置情報が組み込まれます：</p>
+    <div class="math-block">$$\mathbf{q}_m^T \mathbf{k}_n \implies \text{内積が相対位置 } m-n \text{ にのみ依存}$$</div>
+  </div>
+
+  <h4>GPTとBERT</h4>
+  <div class="table-wrap"><table>
+    <tr><th></th><th>GPT (Decoder-only)</th><th>BERT (Encoder-only)</th></tr>
+    <tr><td>マスク</td><td>Causal（未来を隠す三角マスク）</td><td>なし（双方向参照）</td></tr>
+    <tr><td>学習目標</td><td>次トークン予測 $P(x_t | x_{&lt;t})$</td><td>マスクトークン予測（MLM, 15%をマスク）</td></tr>
+    <tr><td>強み</td><td>テキスト生成、推論</td><td>文理解、分類、QA</td></tr>
+  </table></div>
+
+  <div class="training">
+    <div class="label">学習時の Transformer — 並列性とメモリ対策</div>
+    <p>Teacher Forcingにより全トークンを一度に処理できるためGPUの並列性を最大活用します。<br>
+    <strong>Gradient Checkpointing</strong>: 中間活性化を保存せず逆伝播時に再計算 → メモリを $O(\sqrt{T})$ に削減（計算量約33%増加）<br>
+    <strong>Mixed Precision (fp16/bf16)</strong>: 順伝播・逆伝播を低精度で行い、更新のみfp32 → メモリ半減、速度2〜3倍向上<br>
+    <strong>Flash Attention</strong>: Softmaxをブロック単位で計算してHBMアクセスを削減 → $O(T^2)$ のメモリを $O(T)$ に圧縮</p>
+  </div>
+
+  <div class="ai-connection">
+    <div class="label">RNNからTransformerへ（計算量の比較）</div>
+    <div class="table-wrap"><table>
+      <tr><th></th><th>逐次処理</th><th>長距離依存のパス長</th><th>計算量</th></tr>
+      <tr><td>RNN</td><td>$O(T)$ ステップ（並列不可）</td><td>$O(T)$</td><td>$O(T \cdot d^2)$</td></tr>
+      <tr><td>Self-Attention</td><td>1ステップ（全位置並列）</td><td>$O(1)$</td><td>$O(T^2 \cdot d)$</td></tr>
+    </table></div>
+    <p>Self-Attentionは長距離依存を $O(1)$ で解決しますが、$T^2$ のコストがあります。Flash Attention、Sparse Attention、Linear Attentionなどはこの $T^2$ 問題への対応です。</p>
+  </div>
+
+  <div class="column-box">
+    <span class="column-label">コラム — Layer Normalization の数式</span>
+    <p>各トークンの $d$ 次元ベクトルを独立に正規化します：</p>
+    <p style="margin:8px 0">$\text{LN}(\mathbf{x}) = \frac{\mathbf{x} - \mu_x}{\sqrt{\sigma_x^2 + \epsilon}} \cdot \boldsymbol{\gamma} + \boldsymbol{\beta}, \quad \mu_x = \frac{1}{d}\sum_{j=1}^d x_j$</p>
+    <p>バッチ方向ではなく特徴量方向で正規化するため、バッチサイズに依存せずtrain/evalの挙動が一致します。現代LLMの多くはFFNの直前にLNを置く<strong>Pre-LN</strong>構造を採用し、学習安定性を向上させています。</p>
+  </div>
+
+  <div class="matome">
+    <span class="matome-label">本節のまとめ</span>
+    <ul>
+      <li>Multi-Head Attentionは「複数の注目ヘッドが並行して異なる依存関係を学習する」</li>
+      <li>TransformerブロックはMHA + FFNにSkip ConnectionとLayerNormを組み合わせたもの</li>
+      <li>GPT（Decoder-only）は次トークン予測で学習。BERT（Encoder-only）はマスク予測</li>
+      <li>学習時のメモリ対策：Gradient Checkpointing、Mixed Precision、Flash Attention</li>
+      <li>RNNに対するTransformerの優位性：全位置を並列処理でき、長距離依存を1ステップで計算</li>
+    </ul>
+  </div>
+
+  </div>
+</div>
+
+<!-- 現代LLMアーキテクチャ -->
+<div class="topic" id="t-modern-llm" style="border-left-color:var(--month5)">
+  <h3>現代LLMのアーキテクチャ改良 <span class="day-tag">最新技術</span></h3>
+  <div class="topic-body">
+
+  <p class="topic-lead">「Attention Is All You Need」（2017年）のオリジナルTransformerは、その後急速に改良されました。LLaMA・Mistral・Qwen・Gemmaなどの現代LLMは、同じTransformerの骨格を持ちながら、RoPE・GQA・SwiGLU・RMSNormという4つの重要な改良を採用しています。これらを理解することで「なぜ現代LLMはこんなに速くて長文を処理できるのか」がわかります。</p>
+
+  <h4>① RoPE（Rotary Position Embedding）— 相対位置を回転で表現</h4>
+  <p>オリジナルのSinusoidal位置エンコーディングは絶対位置を加算します。RoPEは「Q・Kベクトルに位置に応じた回転を掛ける」ことで、内積に相対位置情報が自然に組み込まれます：</p>
+  <div class="math-block">
+    $$\mathbf{q}_m^T \mathbf{k}_n \to f(\mathbf{q}, m)^T f(\mathbf{k}, n) \quad \text{（内積が相対位置 } m-n \text{ にのみ依存）}$$
+  </div>
+
+  <div class="code-block">
+    <span class="code-label">Python — RoPE（回転位置埋め込み）の実装</span>
+    <pre>import torch
+import torch.nn as nn
+import math
+
+def precompute_freqs_cis(dim: int, seq_len: int, theta: float = 10000.0):
+    """
+    RoPE の回転角を事前計算する
+    dim: ヘッドの次元数（d_k）
+    theta: 周波数の底（デフォルト 10000、長文では 500000 などに拡張）
+    """
+    # 各次元ペア (0,1), (2,3), ... (d-2, d-1) の周波数を計算
+    # 周波数: 1 / (theta ^ (2i/d)) で次元ごとに異なる周期
+    freqs = 1.0 / (theta ** (torch.arange(0, dim, 2).float() / dim))
+    # 位置ごとの角度 (seq_len, dim//2)
+    t     = torch.arange(seq_len, dtype=torch.float32)
+    freqs = torch.outer(t, freqs)   # (seq_len, dim//2)
+
+    # 複素数で表現（実部 + 虚部 ≡ cos + i*sin）
+    freqs_cis = torch.polar(torch.ones_like(freqs), freqs)  # e^(iθ)
+    return freqs_cis  # (seq_len, dim//2)
+
+def apply_rotary_emb(xq, xk, freqs_cis):
+    """
+    Q と K のベクトルに RoPE を適用する
+    xq, xk: (batch, seq, heads, head_dim)
+    """
+    # 隣接する2次元をペアとして複素数に変換
+    xq_c = torch.view_as_complex(xq.float().reshape(*xq.shape[:-1], -1, 2))
+    xk_c = torch.view_as_complex(xk.float().reshape(*xk.shape[:-1], -1, 2))
+
+    # 位置ごとの回転を適用（要素ごとの複素数乗算 = 回転）
+    freqs = freqs_cis.unsqueeze(0).unsqueeze(2)  # (1, seq, 1, dim//2)
+    xq_rot = torch.view_as_real(xq_c * freqs).flatten(3)
+    xk_rot = torch.view_as_real(xk_c * freqs).flatten(3)
+
+    return xq_rot.type_as(xq), xk_rot.type_as(xk)
+
+# 動作確認
+head_dim, seq_len = 64, 512
+freqs_cis = precompute_freqs_cis(head_dim, seq_len)
+
+B, T, H = 2, 10, 8   # batch, seq, heads
+xq = torch.randn(B, T, H, head_dim)
+xk = torch.randn(B, T, H, head_dim)
+
+xq_rot, xk_rot = apply_rotary_emb(xq, xk, freqs_cis[:T])
+print(f"Q after RoPE: {xq_rot.shape}")   # → [2, 10, 8, 64]
+
+# RoPE の利点:
+# 1. 相対位置を直接モデル化 → 絶対位置より汎化が良い
+# 2. コンテキスト長を拡張しやすい（YaRN, LongRoPE などの手法）
+# 3. 外挿性能が高い（4kで学習して32kで使える場合がある）</pre>
+  </div>
+
+  <h4>② GQA（Grouped Query Attention）— KVキャッシュを削減する</h4>
+  <p>Multi-Head Attention（MHA）はQ・K・Vそれぞれにヘッドを持ちます。推論時にKVキャッシュが巨大になる問題を、KとVのヘッド数を減らして共有することで解決します：</p>
+
+  <div class="code-block">
+    <span class="code-label">Python — MHA / MQA / GQA の比較実装</span>
+    <pre>import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import math
+
+class GroupedQueryAttention(nn.Module):
+    """
+    GQA: Q は n_heads 個、K と V は n_kv_heads 個のヘッドを持つ
+    - MHA: n_kv_heads = n_heads  （全ヘッド独立）
+    - MQA: n_kv_heads = 1        （K,V を全Qヘッドで共有）
+    - GQA: 1 < n_kv_heads < n_heads （グループ単位で共有）
+    LLaMA-2(70B): n_heads=64, n_kv_heads=8 → 8倍 KV 削減
+    """
+    def __init__(self, d_model=4096, n_heads=32, n_kv_heads=8):
+        super().__init__()
+        assert n_heads % n_kv_heads == 0
+        self.n_heads    = n_heads
+        self.n_kv_heads = n_kv_heads
+        self.n_rep      = n_heads // n_kv_heads   # 各KVヘッドを何回繰り返すか
+        self.head_dim   = d_model // n_heads
+
+        # Qは通常通り n_heads 個
+        self.wq = nn.Linear(d_model, n_heads    * self.head_dim, bias=False)
+        # K, V は削減された n_kv_heads 個のみ
+        self.wk = nn.Linear(d_model, n_kv_heads * self.head_dim, bias=False)
+        self.wv = nn.Linear(d_model, n_kv_heads * self.head_dim, bias=False)
+        self.wo = nn.Linear(d_model, d_model, bias=False)
+
+    def forward(self, x, mask=None):
+        B, T, _ = x.shape
+
+        q = self.wq(x).view(B, T, self.n_heads,    self.head_dim).transpose(1,2)
+        k = self.wk(x).view(B, T, self.n_kv_heads, self.head_dim).transpose(1,2)
+        v = self.wv(x).view(B, T, self.n_kv_heads, self.head_dim).transpose(1,2)
+
+        # K と V を n_rep 回繰り返して Q と同じヘッド数に揃える
+        # (B, n_kv_heads, T, hd) → (B, n_heads, T, hd)
+        k = k.repeat_interleave(self.n_rep, dim=1)
+        v = v.repeat_interleave(self.n_rep, dim=1)
+
+        # Scaled Dot-Product Attention
+        scores = q @ k.transpose(-2,-1) / math.sqrt(self.head_dim)
+        if mask is not None:
+            scores = scores.masked_fill(mask, float('-inf'))
+        out = F.softmax(scores, dim=-1) @ v
+
+        out = out.transpose(1, 2).contiguous().view(B, T, -1)
+        return self.wo(out)
+
+# ─── KVキャッシュのメモリ削減効果を計算 ───
+def kv_cache_size_mb(n_layers, n_kv_heads, head_dim, seq_len,
+                      batch=1, dtype_bytes=2):
+    """推論時のKVキャッシュのメモリ使用量(MB)"""
+    # K と V それぞれ: n_layers × batch × n_kv_heads × seq_len × head_dim
+    return 2 * n_layers * batch * n_kv_heads * seq_len * head_dim * dtype_bytes / 1024**2
+
+configs = {
+    "LLaMA-2-7B  MHA": (32, 32,  128, 4096),   # n_layers, n_kv, hd, seq
+    "LLaMA-2-70B GQA": (80,  8,  128, 4096),
+    "Mistral-7B  GQA": (32,  8,  128, 4096),
+    "LLaMA-3-8B  GQA": (32,  8,  128, 8192),
+}
+print("モデル                  KVキャッシュ(seq_len=4096, bf16)")
+for name, (nl, nkv, hd, sl) in configs.items():
+    mb = kv_cache_size_mb(nl, nkv, hd, sl)
+    print(f"  {name}: {mb:.0f} MB")</pre>
+  </div>
+
+  <h4>③ SwiGLU FFN — GELUより強力な活性化</h4>
+  <p>オリジナルTransformerのFFNは `Linear → ReLU → Linear` です。LLaMA等の現代LLMは SwiGLU（Swish-Gated Linear Unit）を採用し、ゲート機構で表現力を高めます：</p>
+  <div class="math-block">
+    $$\text{SwiGLU}(x, W, V, b, c) = \text{Swish}(xW+b) \odot (xV+c)$$
+  </div>
+
+  <div class="code-block">
+    <span class="code-label">Python — SwiGLU FFN の実装（LLaMA スタイル）</span>
+    <pre>import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+class FeedForwardSwiGLU(nn.Module):
+    """
+    LLaMA / Mistral / Qwen で使われる SwiGLU FFN
+    パラメータ数を合わせるため中間次元を 2/3 に調整して gate 用の線形層を追加
+    """
+    def __init__(self, d_model: int, hidden_dim: int = None):
+        super().__init__()
+        # LLaMA の慣例: hidden = 8/3 × d_model (最近傍の128の倍数に丸める)
+        if hidden_dim is None:
+            hidden_dim = int(8 * d_model / 3)
+            hidden_dim = (hidden_dim + 127) // 128 * 128  # 128の倍数に
+
+        # 3つの線形層（bias なし）
+        self.w1 = nn.Linear(d_model, hidden_dim, bias=False)  # gate
+        self.w2 = nn.Linear(hidden_dim, d_model, bias=False)  # down
+        self.w3 = nn.Linear(d_model, hidden_dim, bias=False)  # up
+
+    def forward(self, x):
+        # SwiGLU: Swish(W1×x) ⊙ (W3×x) → W2
+        # ゲート (W1) が「どの情報を通すか」を制御する
+        gate = F.silu(self.w1(x))   # Swish = x × sigmoid(x)
+        up   = self.w3(x)           # 情報の「内容」
+        return self.w2(gate * up)   # ゲートで選択して次元を戻す
+
+# 比較: ReLU FFN vs SwiGLU FFN
+class FeedForwardReLU(nn.Module):
+    def __init__(self, d_model, hidden_dim=None):
+        super().__init__()
+        if hidden_dim is None:
+            hidden_dim = d_model * 4   # 通常の4倍
+        self.net = nn.Sequential(
+            nn.Linear(d_model, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, d_model)
+        )
+    def forward(self, x): return self.net(x)
+
+d = 512
+ffn_relu  = FeedForwardReLU(d)
+ffn_swiglu = FeedForwardSwiGLU(d)
+
+p_relu   = sum(p.numel() for p in ffn_relu.parameters())
+p_swiglu = sum(p.numel() for p in ffn_swiglu.parameters())
+print(f"ReLU FFN   パラメータ: {p_relu:,}")    # → 1,049,600
+print(f"SwiGLU FFN パラメータ: {p_swiglu:,}")  # → 1,062,400  ほぼ同じ
+
+# 性能: SwiGLU は同じパラメータ数で一貫して ReLU より高い精度を達成
+# Google PaLM, Meta LLaMA, Qwen すべてが SwiGLU を採用</pre>
+  </div>
+
+  <h4>④ Mixture of Experts（MoE）— 巨大モデルを効率的にスケールする</h4>
+  <p>通常のTransformerはすべてのFFN重みを毎回使います。MoEは「$N$個の専門家（Expert FFN）のうち、各トークンに最適な$k$個だけを選んで実行」します。全パラメータは巨大だが実際に動かすのは小さいため、計算コストを抑えたまま能力を向上できます：</p>
+
+  <div class="code-block">
+    <span class="code-label">Python — Sparse MoE（Top-2 Expert Selection）の実装</span>
+    <pre>import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+class SparseMoE(nn.Module):
+    """
+    Sparse Mixture of Experts FFN
+    各トークンを上位 top_k 個の専門家にルーティングする
+    Mixtral-8×7B: 8専門家から2つ選択 → 実際の計算量は7Bモデル相当
+    """
+    def __init__(self, d_model: int, n_experts: int = 8,
+                 top_k: int = 2, hidden_dim: int = 2048):
+        super().__init__()
+        self.n_experts = n_experts
+        self.top_k     = top_k
+
+        # ルーター: どの専門家に送るか決定するゲーティングネットワーク
+        self.router = nn.Linear(d_model, n_experts, bias=False)
+
+        # N 個の独立した FFN（専門家）
+        self.experts = nn.ModuleList([
+            nn.Sequential(
+                nn.Linear(d_model, hidden_dim), nn.SiLU(),
+                nn.Linear(hidden_dim, d_model)
+            )
+            for _ in range(n_experts)
+        ])
+
+    def forward(self, x):
+        B, T, D = x.shape
+
+        # ─ Step 1: ルーターがスコアを計算 ─
+        router_logits = self.router(x)           # (B, T, n_experts)
+        router_probs  = F.softmax(router_logits, dim=-1)
+
+        # ─ Step 2: 上位 top_k 専門家を選択 ─
+        top_k_vals, top_k_idx = torch.topk(router_probs, self.top_k, dim=-1)
+        # top_k_idx: (B, T, k) どの専門家か
+        # top_k_vals: (B, T, k) ルーターが割り当てた重み
+
+        # 選択された重みを再正規化（合計が1になるように）
+        gate_weights = top_k_vals / top_k_vals.sum(dim=-1, keepdim=True)
+
+        # ─ Step 3: 選ばれた専門家を実行して重み付け和を取る ─
+        output = torch.zeros_like(x)
+        x_flat = x.view(-1, D)               # (B*T, D)
+
+        for expert_id, expert in enumerate(self.experts):
+            # このトークンがこの専門家を選んでいるか判定
+            is_selected = (top_k_idx == expert_id).any(dim=-1)  # (B, T)
+            if not is_selected.any():
+                continue  # 1つもルーティングされていないなら skip
+
+            # 選ばれたトークンだけ処理（疎な計算）
+            selected_idx = is_selected.view(-1).nonzero(as_tuple=True)[0]
+            expert_out = expert(x_flat[selected_idx])  # 専門家を実行
+
+            # 対応するゲート重みを取得
+            mask = (top_k_idx == expert_id).float()    # (B, T, k)
+            weights = (mask * gate_weights).sum(dim=-1)  # (B, T)
+            weights_flat = weights.view(-1)[selected_idx].unsqueeze(-1)
+
+            output.view(-1, D)[selected_idx] += expert_out * weights_flat
+
+        return output
+
+# 動作確認
+moe = SparseMoE(d_model=256, n_experts=8, top_k=2, hidden_dim=512)
+x   = torch.randn(2, 10, 256)   # (batch=2, seq=10, d=256)
+out = moe(x)
+print(f"MoE 入出力 shape: {x.shape} → {out.shape}")  # → [2, 10, 256]
+
+# 実際の計算量
+total_params = sum(p.numel() for p in moe.parameters()) / 1e6
+active_ratio = 2 / 8   # top_k / n_experts
+print(f"全パラメータ: {total_params:.2f}M")
+print(f"各ステップで実際に使う割合: {active_ratio:.0%}")
+# → 全体のパラメータは多いが、計算量は 25% のみ
+
+print("""
+代表的な MoE モデル:
+  Mixtral-8×7B  : 8専門家 × 各7B = 47B総パラメータ、実計算量12.9B相当
+  GPT-4          : 噂によると MoE (未公式)
+  Gemini 1.5 Pro : MoE アーキテクチャ
+  Qwen1.5-MoE    : 14.3B総パラメータ, 2.7B有効
+""")</pre>
+  </div>
+
+  <div class="ai-connection">
+    <div class="label">現代LLMアーキテクチャまとめ（LLaMAスタイル）</div>
+    <p>LLaMA-3/Mistral/Qwenなどの現代LLMの構成：</p>
+    <div class="table-wrap"><table>
+      <tr><th>コンポーネント</th><th>オリジナル Transformer</th><th>現代 LLM</th><th>理由</th></tr>
+      <tr><td>位置エンコーディング</td><td>Sinusoidal（加算）</td><td>RoPE（回転）</td><td>相対位置・長文対応</td></tr>
+      <tr><td>Attention</td><td>MHA</td><td>GQA</td><td>KVキャッシュ削減</td></tr>
+      <tr><td>FFN</td><td>ReLU</td><td>SwiGLU</td><td>性能向上</td></tr>
+      <tr><td>Normalization</td><td>LayerNorm（後）</td><td>RMSNorm（前）</td><td>計算効率・安定性</td></tr>
+      <tr><td>スケーリング</td><td>Dense</td><td>MoE（一部）</td><td>計算効率でスケール</td></tr>
+    </table></div>
+  </div>
+
+  <div class="matome">
+    <span class="matome-label">本節のまとめ</span>
+    <ul>
+      <li>RoPE：Q・Kに位置ごとの回転を掛け、内積が相対位置のみに依存するようにする</li>
+      <li>GQA：KとVのヘッド数を減らして共有。KVキャッシュを最大8倍削減（LLaMA-2-70B実績）</li>
+      <li>SwiGLU：Swish関数でゲーティングするFFN。同パラメータ数でReLUより高性能</li>
+      <li>MoE：N個の専門家からk個を選んで実行。全パラメータは大きく計算量は小さい</li>
+    </ul>
+  </div>
+
+  </div>
+</div>
+
+<!-- Flash Attention -->
+<div class="topic" id="t-flash" style="border-left-color:var(--month5)">
+  <h3>Flash Attention — メモリと速度の革命 <span class="day-tag">最新技術</span></h3>
+  <div class="topic-body">
+
+  <p class="topic-lead">Transformerの最大の弱点は「Self-Attentionの計算とメモリが系列長の二乗 $O(T^2)$ に比例する」ことです。128kトークンのコンテキストでは $128000^2 = 164億$ の要素からなる Attention 行列が必要で、A100(80GB)でも到底収まりません。Flash Attentionはこの問題をアルゴリズム的に解決し、現代LLMの長文処理を可能にした革命的な実装です。</p>
+
+  <div class="visual">
+    <div class="label">なぜ通常の Attention は遅いのか（メモリ律速）</div>
+    <p>GPUには SRAM（超高速・小容量）と HBM（高帯域メモリ・大容量）があります。<br><br>
+    通常のAttention：<br>
+    1. Q@Kᵀ を計算 → HBM に書き込む（遅い）<br>
+    2. Softmax を計算 → HBM から読み込み → HBM に書き込む（遅い）<br>
+    3. @V を計算 → HBM から読み込む（遅い）<br><br>
+    Flash Attention：<br>
+    1〜3の全計算を SRAM 内で完結（HBM アクセス最小化）<br>
+    → メモリ転送が10〜20倍削減 → 実際の計算量は同じでも劇的に速い</p>
+  </div>
+
+  <h4>Flash Attentionのコアアイデア：タイリング</h4>
+  <div class="math-block">
+    $$\text{Attention}(Q,K,V) = \text{softmax}\!\left(\frac{QK^T}{\sqrt{d_k}}\right)V$$
+  </div>
+  <p>Softmaxは全要素を見ないと計算できないと思われていましたが、「オンライン Softmax」アルゴリズムを使うとブロック単位で逐次計算できます：</p>
+
+  <div class="code-block">
+    <span class="code-label">Python — Flash Attention の思想を理解する（タイリング版Softmax）</span>
+    <pre>import torch
+import torch.nn.functional as F
+import math
+
+# ─── 問題：Softmax は全要素を見ないと計算できないのでは？ ───
+# 通常: Softmax(x) = exp(x_i) / Σ exp(x_j)
+# → 全 x_j を一度にメモリに乗せないと計算できない？
+
+# ─── オンラインSoftmax：ブロック単位で逐次更新できる！ ───
+def online_softmax_demo(x, block_size=4):
+    """
+    x: (T,) の1次元テンソル
+    ブロックを1つずつ処理しながら最終的な Softmax を計算する
+    """
+    T = x.shape[0]
+    running_max = float('-inf')   # 現在までの最大値
+    running_sum = 0.0             # スケール済みexpの累積和
+
+    # Pass 1: 各ブロックで最大値と exp の和を逐次更新
+    for i in range(0, T, block_size):
+        block = x[i:i+block_size]
+        block_max = block.max().item()
+
+        # 新しい最大値が見つかったら以前の計算を補正
+        if block_max > running_max:
+            # 以前の sum を新しい最大値スケールに補正
+            correction = math.exp(running_max - block_max)
+            running_sum = running_sum * correction + torch.exp(block - block_max).sum().item()
+            running_max = block_max
+        else:
+            running_sum += torch.exp(block - running_max).sum().item()
+
+    # Pass 2: 最終的な確率を計算
+    result = torch.exp(x - running_max) / running_sum
+    return result
+
+# 検証：通常の Softmax と同じ結果になるか確認
+x = torch.randn(16)
+normal_softmax = F.softmax(x, dim=0)
+online_softmax = online_softmax_demo(x, block_size=4)
+
+print("最大誤差:", (normal_softmax - online_softmax).abs().max().item())
+# → 約 1e-7 ← ほぼ完全に一致！
+
+# ─── Flash Attention の実用的な使い方（PyTorch 2.0+）───
+import torch
+# PyTorch 2.0+ から F.scaled_dot_product_attention が Flash Attention を自動選択
+x  = torch.randn(4, 8, 512, 64, device='cpu')  # (B, heads, T, d_k)
+q, k, v = x, x, x
+
+# 通常のAttention
+scores  = q @ k.transpose(-2, -1) / math.sqrt(64)
+weights = F.softmax(scores, dim=-1)
+out_std = weights @ v
+
+# Flash Attention（自動選択・GPUなら高速）
+# is_causal=True で因果マスクを自動適用
+out_flash = F.scaled_dot_product_attention(q, k, v,
+                                           is_causal=True,
+                                           dropout_p=0.0)
+
+# 結果は同じ（causal maskの分だけ差異あり）
+print(f"出力 shape: {out_flash.shape}")  # → [4, 8, 512, 64]
+
+print("""
+Flash Attention 2 vs 3 の改善:
+  FA-1 (2022): メモリ O(T) 達成。通常比 3〜4倍高速
+  FA-2 (2023): 並列性改善。通常比 5〜8倍高速。H100最適化
+  FA-3 (2024): H100/Hopper GPUのWGMMAを活用。FA-2比 1.5〜2倍高速
+
+コンテキスト長の実現:
+  4k   → 一般的なGPT-3
+  32k  → Claude 2    (Flash Attention なしでは不可能)
+  1M+  → Gemini 1.5 (Flash Attention 必須)
+""")</pre>
+  </div>
+
+  <div class="ai-connection">
+    <div class="label">Flash Attention が可能にしたもの</div>
+    <p>Flash Attentionは「アルゴリズムの改善だけで同じ計算量でも10倍速い」という例であり、深層学習では実装効率が理論上の計算量と同じくらい重要であることを示しました。<br>
+    影響：<strong>コンテキスト長の爆発的拡大</strong>（4k→1M+）、<strong>バッチサイズの増大</strong>、<strong>長文書類推論</strong>（RAG不要なケースの増加）、<strong>マルチモーダル</strong>（高解像度画像のViT処理）</p>
+  </div>
+
+  <div class="matome">
+    <span class="matome-label">本節のまとめ</span>
+    <ul>
+      <li>通常のAttentionはHBMへの読み書きがボトルネック（計算律速ではなくメモリ律速）</li>
+      <li>Flash AttentionはタイリングでSRAM内で計算完結。HBMアクセスを10〜20倍削減</li>
+      <li>オンラインSoftmaxにより全要素を見なくてもブロック単位で正確なSoftmaxを計算可能</li>
+      <li>PyTorch 2.0+の F.scaled_dot_product_attention で自動的にFlash Attentionを利用できる</li>
+    </ul>
+  </div>
+
+  </div>
+</div>
+
+<div class="page-nav">
+  <a href="month4.html">
+    <div class="nav-label">← 前のページ</div>
+    <div class="nav-title">Month 4: CNN — 畳み込みの数学</div>
+  </a>
+  <a href="month6.html" class="next">
+    <div class="nav-label">次のページ →</div>
+    <div class="nav-title">Month 6: 生成モデル・強化学習・NLP</div>
+  </a>
+</div>
+
+</div><!-- /container -->
+<button id="back-to-top" onclick="window.scrollTo({top:0,behavior:'smooth'})" title="先頭へ戻る">↑</button>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [{left:"$$",right:"$$",display:true},{left:"$",right:"$",display:false}],
+    throwOnError: false
+  });
+  document.querySelectorAll('.topic').forEach(topic => {
+    const h3 = topic.querySelector('h3');
+    if (!h3) return;
+    h3.addEventListener('click', () => topic.classList.toggle('collapsed'));
+  });
+  const bar = document.getElementById('progress-bar');
+  const btn = document.getElementById('back-to-top');
+  const tocLinks = document.querySelectorAll('.page-toc a');
+  const topics = document.querySelectorAll('.topic[id]');
+  window.addEventListener('scroll', () => {
+    const h = document.documentElement;
+    bar.style.width = Math.min((h.scrollTop / (h.scrollHeight - h.clientHeight)) * 100, 100) + '%';
+    btn.classList.toggle('visible', h.scrollTop > 400);
+    let current = '';
+    topics.forEach(t => { if (t.getBoundingClientRect().top <= 100) current = t.id; });
+    tocLinks.forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#' + current));
+  }, { passive: true });
+});
+</script>
+</body>
+</html>

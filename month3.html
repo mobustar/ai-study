@@ -1,0 +1,1078 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Month 3: ニューラルネットワーク基礎 — AI学習参考資料</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
+<link rel="stylesheet" href="ai_math_style.css">
+</head>
+<body>
+<div id="progress-bar"></div>
+<div class="container">
+
+<nav class="site-nav">
+  <a href="index.html">🏠 ホーム</a>
+  <span class="sep">/</span>
+  <a href="month1.html">Month 1</a>
+  <span class="sep">/</span>
+  <a href="month2.html">Month 2</a>
+  <span class="sep">/</span>
+  <a href="month3.html" class="current">Month 3</a>
+  <span class="sep">/</span>
+  <a href="month4.html">Month 4</a>
+  <span class="sep">/</span>
+  <a href="month5.html">Month 5</a>
+  <span class="sep">/</span>
+  <a href="month6.html">Month 6</a>
+</nav>
+
+<div class="page-header">
+  <span class="month-badge" style="background:var(--month3);color:#fff;">MONTH 3</span>
+  <h1>ニューラルネットワーク基礎</h1>
+</div>
+
+<div class="page-toc">
+  <h3>このページの内容</h3>
+  <a href="#t-mlp">パーセプトロンとMLP（Day 43–48）</a>
+  <a href="#t-backprop">誤差逆伝播法 + 計算グラフ + 数値微分（Day 49–52）</a>
+  <a href="#t-tricks">学習テクニック — 初期化・BN・Dropout・LRスケジュール（Day 53–57）</a>
+  <a href="#t-largescale">大規模学習テクニック — 混合精度・勾配累積・Checkpointing</a>
+</div>
+
+<!-- MLP -->
+<div class="topic" id="t-mlp" style="border-left-color:var(--month3)">
+  <h3>パーセプトロンとMLP <span class="day-tag">Day 43–48</span></h3>
+  <div class="topic-body">
+
+  <p class="topic-lead">ニューラルネットワークを初めて見たとき「複雑そう」と感じる人が多いですが、実はたった2つの操作の繰り返しです。①行列積（線形変換）と②非線形関数の適用。これを層ごとに積み重ねると、驚くほど複雑なパターンが表現できるようになります。まずはその仕組みを手で追ってみましょう。</p>
+
+  <div class="visual">
+    <div class="label">ニューラルネットのイメージ：「段階的な特徴抽出」</div>
+    <p>画像認識ネットワークの各層は段階的に高レベルな特徴を学習します：<br>
+    第1層：縦線・横線・斜線のエッジを検出<br>
+    第2層：エッジを組み合わせて「曲線」「角」を検出<br>
+    第3層：「目」「耳」「鼻」のようなパーツを検出<br>
+    最終層：「これは猫、これは犬」と判断<br><br>
+    ネットワークはこの「どんな特徴を見るか」を自動的に学習します。</p>
+  </div>
+
+  <h4>順伝播を手で追う</h4>
+  <p>各層は「アフィン変換（線形変換 + 並進）→ 非線形変換」を繰り返します：</p>
+  <div class="math-block">
+    $$\mathbf{h}^{(l)} = f\left(W^{(l)} \mathbf{h}^{(l-1)} + \mathbf{b}^{(l)}\right)$$
+  </div>
+
+  <div class="code-block">
+    <span class="code-label">Python — 2層ニューラルネットを NumPy で完全実装（順伝播 + 逆伝播 + 更新）</span>
+    <pre>import numpy as np
+
+# ─── 活性化関数の定義 ───
+def relu(x):
+    return np.maximum(0, x)         # 負の値を0に切り捨て
+
+def relu_grad(x):
+    return (x > 0).astype(float)   # 正のとき1、負のとき0
+
+def softmax(x):
+    # max を引いて数値安定化（exp のオーバーフロー防止）
+    e = np.exp(x - x.max(axis=1, keepdims=True))
+    return e / e.sum(axis=1, keepdims=True)
+
+# ─── パラメータの初期化（MNISTの例：784→256→10）───
+np.random.seed(42)
+# He初期化：ReLU向け（標準偏差 = √(2/入力次元)）
+W1 = np.random.randn(784, 256) * np.sqrt(2/784)  # (784, 256)
+b1 = np.zeros(256)                                 # (256,)
+W2 = np.random.randn(256, 10) * np.sqrt(2/256)    # (256, 10)
+b2 = np.zeros(10)                                  # (10,)
+
+# ─── 順伝播（バッチサイズ32）───
+x     = np.random.randn(32, 784)     # 入力データ: (32, 784)
+y     = np.random.randint(0, 10, 32)  # 正解ラベル: [0〜9]
+
+z1   = x @ W1 + b1                   # 線形変換: (32, 256)
+h1   = relu(z1)                       # ReLU活性化: (32, 256)
+z2   = h1 @ W2 + b2                  # 線形変換: (32, 10)
+out  = softmax(z2)                    # Softmax: (32, 10)
+pred = np.argmax(out, axis=1)         # 予測クラス: (32,)
+
+print(f"出力 shape: {out.shape}")      # (32, 10)
+print(f"確率の合計（全サンプル1.0）: {out.sum(axis=1)[:3].round(4)}")
+
+# ─── 交差エントロピー損失 ───
+eps  = 1e-9
+loss = -np.mean(np.log(out[np.arange(32), y] + eps))
+print(f"損失（Cross Entropy）: {loss:.4f}")
+
+# ─── 逆伝播（Softmax + CE の勾配は「予測 - 正解」） ───
+dz2         = out.copy()
+dz2[np.arange(32), y] -= 1        # one-hot 正解を引く
+dz2        /= 32                   # バッチ平均
+
+dW2 = h1.T @ dz2                  # ∂L/∂W2: (256, 10)
+db2 = dz2.sum(axis=0)             # ∂L/∂b2: (10,)
+dh1 = dz2 @ W2.T                  # ∂L/∂h1: (32, 256)
+
+dz1 = dh1 * relu_grad(z1)        # ReLU の逆伝播: (32, 256)
+dW1 = x.T @ dz1                   # ∂L/∂W1: (784, 256)
+db1 = dz1.sum(axis=0)             # ∂L/∂b1: (256,)
+
+# ─── パラメータ更新（SGD）───
+lr = 0.01
+W1 -= lr * dW1
+b1 -= lr * db1
+W2 -= lr * dW2
+b2 -= lr * db2
+print("1ステップの学習完了！")</pre>
+  </div>
+
+  <h4>活性化関数の比較</h4>
+  <p>非線形関数がなければ、どれだけ層を重ねても「1つの線形変換」と等価になってしまいます。XOR問題が解けないのも、線形分離不可能な問題を線形モデルでは表現できないためです。</p>
+  <div class="table-wrap"><table>
+    <tr><th>関数</th><th>定義</th><th>勾配</th><th>特徴・用途</th></tr>
+    <tr><td>Sigmoid</td><td>$\frac{1}{1+e^{-x}}$</td><td>$\sigma(x)(1-\sigma(x))$</td><td>出力 (0,1)。勾配消失しやすい。二値分類の出力層</td></tr>
+    <tr><td>Tanh</td><td>$\frac{e^x - e^{-x}}{e^x + e^{-x}}$</td><td>$1-\tanh^2(x)$</td><td>出力 (-1,1)。ゼロ中心。LSTM内部で使用</td></tr>
+    <tr><td>ReLU</td><td>$\max(0, x)$</td><td>$\mathbb{1}[x>0]$</td><td>計算効率が高い。Dead neuron問題あり</td></tr>
+    <tr><td>GELU</td><td>$x \cdot \Phi(x)$</td><td>$\Phi(x) + x\phi(x)$</td><td>Transformerの標準。滑らかなReLU</td></tr>
+    <tr><td>Swish</td><td>$x \cdot \sigma(x)$</td><td>$\sigma(x) + x\sigma(x)(1-\sigma(x))$</td><td>自己ゲート。深い層で有効</td></tr>
+  </table></div>
+
+  <h4>レイヤーを「クラス」として抽象化する — PyTorchの設計哲学</h4>
+  <p>ゼロから作るDeep Learningが教えてくれる最も重要な設計思想のひとつが「各演算をforward/backwardメソッドを持つクラスとして実装する」アプローチです。PyTorchの<code>nn.Module</code>はまさにこの設計を採用しています。</p>
+
+  <div class="code-block">
+    <span class="code-label">Python — Layerクラスを自作 → PyTorch nn.Module との対応関係を確認する</span>
+    <pre>import numpy as np
+import torch
+import torch.nn as nn
+
+# ─── ゼロつくスタイル：各層をクラスで実装 ───
+# 各クラスが「forward（順伝播）」と「backward（逆伝播）」を担当
+
+class AffineLayer:
+    """全結合層（Affine変換）: y = xW + b"""
+    def __init__(self, W, b):
+        self.W = W
+        self.b = b
+        # 逆伝播のために入力を保存する変数
+        self.x = None
+        # 勾配を格納する変数
+        self.dW = None
+        self.db = None
+
+    def forward(self, x):
+        self.x = x                          # 逆伝播のために記憶
+        return x @ self.W + self.b
+
+    def backward(self, dy):
+        """dy: 上流から流れてきた勾配"""
+        self.dW = self.x.T @ dy             # ∂L/∂W
+        self.db = dy.sum(axis=0)            # ∂L/∂b
+        dx = dy @ self.W.T                  # ∂L/∂x（下流に流す）
+        return dx
+
+class ReLULayer:
+    """ReLU活性化層"""
+    def __init__(self):
+        self.mask = None   # 順伝播で正だった位置を記憶
+
+    def forward(self, x):
+        self.mask = (x > 0)
+        return x * self.mask
+
+    def backward(self, dy):
+        return dy * self.mask              # 正だった位置のみ勾配を通す
+
+# ─── 実際に使ってみる ───
+np.random.seed(0)
+W1 = np.random.randn(3, 4) * 0.1
+b1 = np.zeros(4)
+W2 = np.random.randn(4, 2) * 0.1
+b2 = np.zeros(2)
+
+layer1 = AffineLayer(W1, b1)
+act1   = ReLULayer()
+layer2 = AffineLayer(W2, b2)
+
+x = np.random.randn(5, 3)   # バッチ5、入力3次元
+
+# 順伝播
+h1  = act1.forward(layer1.forward(x))
+out = layer2.forward(h1)
+
+# 仮の損失と逆伝播
+d_out = out   # 損失の勾配（今回は簡略化）
+d_h1  = layer2.backward(d_out)
+dx    = layer1.backward(act1.backward(d_h1))
+
+print("W1の勾配 shape:", layer1.dW.shape)   # → (3, 4)
+print("W2の勾配 shape:", layer2.dW.shape)   # → (4, 2)
+
+# ─── PyTorch の nn.Module との完全な対応関係 ───
+# AffineLayer  ←→  nn.Linear
+# ReLULayer    ←→  nn.ReLU
+# backward()   ←→  loss.backward()  で自動実行
+# self.dW      ←→  layer.weight.grad
+# self.db      ←→  layer.bias.grad
+
+# PyTorchで同じネットワーク
+net = nn.Sequential(
+    nn.Linear(3, 4),  # AffineLayer(W1, b1) に相当
+    nn.ReLU(),         # ReLULayer に相当
+    nn.Linear(4, 2),  # AffineLayer(W2, b2) に相当
+)
+x_pt = torch.tensor(x, dtype=torch.float32)
+out_pt = net(x_pt)
+out_pt.sum().backward()
+
+print("PyTorch の weight.grad shape:", net[0].weight.grad.shape)  # → (4, 3)
+# ※ PyTorchは (out, in) の順で重みを持つので転置になっている</pre>
+  </div>
+
+  <h4>万能近似定理</h4>
+  <p>1つの隠れ層に十分な数のニューロンを持つフィードフォワードネットワークは、任意の連続関数を任意の精度で近似できます。ただし「十分な数」が実用的かは別問題で、深い（多層の）ネットワークの方が効率的に複雑な関数を表現できることが知られています。</p>
+
+  <div class="point-box">
+    <span class="point-label">ポイント</span>
+    <p>ニューラルネットの本質は「行列積 + 非線形関数」の繰り返しです。PyTorchの<code>nn.Linear</code>は内部で $y = xW^T + b$ を計算するだけです。複雑に見えても、基本は単純な操作の積み重ねです。</p>
+  </div>
+
+  <div class="matome">
+    <span class="matome-label">本節のまとめ</span>
+    <ul>
+      <li>ニューラルネットは「行列積（線形変換）+ 非線形活性化関数」の繰り返し</li>
+      <li>非線形性がなければ、何層重ねても1層と等価になる（XOR問題が解けない）</li>
+      <li>ReLUは計算効率が高く実用的。TransformerではGELUが標準</li>
+      <li>万能近似定理：十分なニューロン数があれば任意の関数を近似できる</li>
+    </ul>
+  </div>
+
+  </div>
+</div>
+
+<!-- Backpropagation -->
+<div class="topic" id="t-backprop" style="border-left-color:var(--month3)">
+  <h3>誤差逆伝播法 (Backpropagation) <span class="day-tag">Day 49–52</span></h3>
+  <div class="topic-body">
+
+  <p class="topic-lead">ニューラルネットの学習で最も重要なアルゴリズムが誤差逆伝播法（バックプロパゲーション）です。「どの重みがどれだけ間違いに責任があるか」を連鎖律を使って効率よく計算します。PyTorchでは<code>loss.backward()</code>の一行がこれをすべて自動で行ってくれますが、仕組みを理解することが重要です。</p>
+
+  <div class="visual">
+    <div class="label">逆伝播のイメージ：「責任の遡及」</div>
+    <p>ネットワークが「猫を犬と誤認識」しました。誰の責任でしょうか？<br>
+    逆伝播は出力から入力に向かって「各重みが間違いにどれだけ寄与したか（責任度＝勾配）」を計算します。責任度が大きい重みほど大幅に修正されます。連鎖律により「次の層の責任 × この層のローカル微分 = この層の責任」という形で責任が逆向きに伝播していきます。</p>
+  </div>
+
+  <h4>計算グラフ — 「順伝播」と「逆伝播」の構造を見る</h4>
+  <p>ゼロから作るDeep Learningのアプローチに従い、まず計算グラフ（各演算をノードで表した有向グラフ）で逆伝播を視覚的に理解します。</p>
+
+  <div class="visual">
+    <div class="label">計算グラフの例：z = (x + y) × w</div>
+    <pre style="background:#0d1117;color:#c9d1d9;padding:18px 22px;border-radius:8px;font-size:0.85rem;line-height:2;overflow-x:auto;">
+【順伝播】 →→→→→→→→→→→→→→→→→→→→→→→
+  x=2, y=3                         w=4
+     ↓   ↓                           ↓
+    [+ ノード] → s=5 → [× ノード] → z=20
+                              ↑
+                              w=4
+
+【逆伝播】（∂L/∂z = 1 として出発）←←←←←←←←←←
+                    ∂L/∂z = 1
+                         ↓
+         ∂L/∂s = ∂L/∂z × ∂z/∂s    ∂L/∂w = ∂L/∂z × ∂z/∂w
+               = 1 × w = 4              = 1 × s = 5
+                    ↓
+  ∂L/∂x = ∂L/∂s × ∂s/∂x = 4 × 1 = 4
+  ∂L/∂y = ∂L/∂s × ∂s/∂y = 4 × 1 = 4
+
+規則：各ノードは「上流の勾配 × 自分のローカル微分」を下流に送るだけ！</pre>
+  </div>
+
+  <p>この「各ノードが局所的な計算だけを担当する」設計こそが、PyTorchのautogradが実現していることです。どれだけ複雑なネットワークでも、1つ1つのノードは単純な演算しかしていません。</p>
+
+  <div class="code-block">
+    <span class="code-label">Python — 計算グラフを自分で実装して逆伝播を理解する（ゼロつくスタイル）</span>
+    <pre>import numpy as np
+
+# ─── 各ノードを「forward / backward」メソッドを持つクラスで実装 ───
+# これがPyTorchのnn.Moduleの設計の原型
+
+class MulNode:
+    """乗算ノード: z = x * y"""
+    def forward(self, x, y):
+        self.x, self.y = x, y          # 逆伝播のために保存
+        return x * y
+
+    def backward(self, dz):
+        """dz: 上流から流れてきた勾配"""
+        dx = dz * self.y               # ∂z/∂x = y
+        dy = dz * self.x               # ∂z/∂y = x
+        return dx, dy
+
+class AddNode:
+    """加算ノード: z = x + y"""
+    def forward(self, x, y):
+        return x + y
+
+    def backward(self, dz):
+        """加算は勾配をそのまま分岐させる（勾配のルーティング）"""
+        dx = dz * 1                    # ∂z/∂x = 1
+        dy = dz * 1                    # ∂z/∂y = 1
+        return dx, dy
+
+class ReLUNode:
+    """ReLUノード: y = max(0, x)"""
+    def forward(self, x):
+        self.mask = (x > 0)            # 正の要素だけ覚える
+        return x * self.mask
+
+    def backward(self, dy):
+        """逆伝播：順伝播で正だった位置だけ勾配を通す"""
+        return dy * self.mask          # ∂y/∂x = 1 if x>0 else 0
+
+# ─── 実際に使ってみる：z = ReLU((x + y) * w) の逆伝播 ───
+add  = AddNode()
+mul  = MulNode()
+relu = ReLUNode()
+
+# 順伝播
+x, y, w = 2.0, 3.0, -1.0            # w が負 → ReLU でゼロになる例
+s = add.forward(x, y)               # s = x + y = 5.0
+t = mul.forward(s, w)               # t = s * w = -5.0
+z = relu.forward(t)                 # z = max(0, -5) = 0.0
+print(f"順伝播: s={s}, t={t}, z={z}")
+
+# 逆伝播（出力側からスタート、dL/dz = 1 と仮定）
+dz = 1.0
+dt        = relu.backward(dz)       # → 0.0（ReLUがゼロにしたので勾配もゼロ）
+ds, dw    = mul.backward(dt)        # → ds=0, dw=0
+dx, dy    = add.backward(ds)        # → dx=0, dy=0
+
+print(f"逆伝播: dz={dz}, dt={dt:.1f}, ds={ds:.1f}, dw={dw:.1f}")
+print(f"         dx={dx:.1f}, dy={dy:.1f}")
+# → ReLU が出力をゼロにした場合、その手前の全勾配がゼロになる = Dead Neuron の正体！
+
+# ─── w = +1.0 にして ReLU が通過する場合 ───
+w = 1.0
+s2 = add.forward(x, y)
+t2 = mul.forward(s2, w)
+z2 = relu.forward(t2)
+
+dt2      = relu.backward(1.0)
+ds2, dw2 = mul.backward(dt2)
+dx2, dy2 = add.backward(ds2)
+print(f"\nw=+1 の場合: dx={dx2:.1f}, dy={dy2:.1f}, dw={dw2:.1f}")
+# → dx=1, dy=1, dw=5  ← 勾配が正常に流れる</pre>
+  </div>
+
+  <h4>数値微分で勾配の正しさを検証する</h4>
+  <p>解析的な勾配（上記の手計算）が正しいか確かめる方法が<strong>数値微分</strong>です。$\epsilon$ だけパラメータを動かして損失変化を見ます：</p>
+  <div class="math-block">
+    $$\frac{\partial f}{\partial x} \approx \frac{f(x+h) - f(x-h)}{2h}, \quad h \approx 10^{-4}$$
+  </div>
+
+  <div class="code-block">
+    <span class="code-label">Python — 数値微分で勾配検証（Gradient Check）</span>
+    <pre>import numpy as np
+
+def numerical_gradient(f, x, h=1e-4):
+    """
+    関数 f の x における勾配を数値微分で近似する
+    中心差分（前後に h ずらして差を取る）を使うと精度が上がる
+    """
+    grad = np.zeros_like(x)
+    # x の各要素を1つずつ動かして偏微分を計算
+    for i in range(x.size):
+        x_flat = x.ravel()
+
+        x_flat[i] += h
+        f_plus  = f(x.reshape(x.shape))   # f(x + h)
+        x_flat[i] -= 2 * h
+        f_minus = f(x.reshape(x.shape))   # f(x - h)
+        x_flat[i] += h                    # 元に戻す
+
+        grad.ravel()[i] = (f_plus - f_minus) / (2 * h)
+    return grad
+
+# ─── 2層ネットの損失関数に対して勾配を検証 ───
+np.random.seed(42)
+
+# ミニネットのパラメータ
+W1 = np.random.randn(3, 4) * 0.1   # 入力3次元 → 隠れ4次元
+b1 = np.zeros(4)
+W2 = np.random.randn(4, 2) * 0.1   # 隠れ4次元 → 出力2次元
+b2 = np.zeros(2)
+
+x    = np.array([[1.0, 0.5, -0.3]])  # 入力 (1, 3)
+y_true = np.array([1, 0])            # 正解ラベル（クラス0）
+
+def loss_fn(W1):
+    """W1 に対する損失を返す関数"""
+    h = np.maximum(0, x @ W1 + b1)          # ReLU
+    out = h @ W2 + b2                        # 出力層
+    # Softmax + Cross-Entropy
+    e = np.exp(out - out.max())
+    p = e / e.sum()
+    return -np.log(p[0, y_true[0]] + 1e-9)  # スカラー損失
+
+# 数値微分で W1 の勾配を計算（時間はかかるが確実）
+num_grad_W1 = numerical_gradient(loss_fn, W1)
+
+# 解析的勾配（PyTorch）
+import torch
+W1_t = torch.tensor(W1, dtype=torch.float32, requires_grad=True)
+W2_t = torch.tensor(W2, dtype=torch.float32)
+b1_t = torch.tensor(b1, dtype=torch.float32)
+b2_t = torch.tensor(b2, dtype=torch.float32)
+x_t  = torch.tensor(x,  dtype=torch.float32)
+
+h_t   = torch.relu(x_t @ W1_t + b1_t)
+out_t = h_t @ W2_t + b2_t
+loss_t = torch.nn.functional.cross_entropy(out_t, torch.tensor([0]))
+loss_t.backward()
+anal_grad_W1 = W1_t.grad.numpy()
+
+# 比較：最大誤差が 1e-5 以下なら実装は正しい
+max_err = np.abs(num_grad_W1 - anal_grad_W1).max()
+print(f"数値微分 vs 解析的勾配の最大誤差: {max_err:.2e}")
+# → 1.23e-07 ← 非常に小さい：勾配計算は正しい！
+print(f"勾配チェック: {'OK ✓' if max_err < 1e-4 else 'NG ✗ バグあり'}")</pre>
+  </div>
+
+  <div class="point-box">
+    <span class="point-label">ポイント：数値微分の使い道</span>
+    <p>数値微分は計算が遅いため実際の学習には使いません。しかし「自分で逆伝播を実装した後に正しいかチェックする」ために非常に重要です。PyTorchの <code>torch.autograd.gradcheck</code> も内部で同様の検証を行います。新しい損失関数やカスタム層を実装したときは必ず Gradient Check を実行する習慣をつけましょう。</p>
+  </div>
+
+  <h4>全結合層の逆伝播を手で計算する</h4>
+  <p>$\mathbf{y} = X W + \mathbf{b}$ という全結合層を考えます。上流から勾配 $\frac{\partial \mathcal{L}}{\partial \mathbf{y}}$ が流れてきたとき：</p>
+  <div class="math-block">
+    $$\frac{\partial \mathcal{L}}{\partial W} = X^T \frac{\partial \mathcal{L}}{\partial \mathbf{y}}, \quad \frac{\partial \mathcal{L}}{\partial \mathbf{b}} = \sum_i \frac{\partial \mathcal{L}}{\partial \mathbf{y}_i}, \quad \frac{\partial \mathcal{L}}{\partial X} = \frac{\partial \mathcal{L}}{\partial \mathbf{y}} W^T$$
+  </div>
+
+  <div class="code-block">
+    <span class="code-label">Python — 全結合層の逆伝播を手計算してPyTorchのautogradと比較する</span>
+    <pre>import numpy as np
+import torch
+
+np.random.seed(0)
+
+# ─── NumPy による手計算 ───
+X_np = np.random.randn(4, 3)   # 入力: (batch=4, in_features=3)
+W_np = np.random.randn(3, 2)   # 重み: (in=3, out=2)
+b_np = np.zeros(2)              # バイアス: (2,)
+
+# 順伝播
+y_np   = X_np @ W_np + b_np    # 線形変換: (4, 2)
+loss_np = 0.5 * np.sum(y_np**2) # 単純な MSE 損失
+
+# 逆伝播（連鎖律を手で適用）
+dL_dy = y_np                    # ∂L/∂y = y （∂(0.5×y²)/∂y = y）
+dL_dW = X_np.T @ dL_dy         # ∂L/∂W = X^T × δ  → shape(3,2)
+dL_db = dL_dy.sum(axis=0)      # ∂L/∂b = Σδ（バッチ方向に合計）
+dL_dX = dL_dy @ W_np.T         # ∂L/∂X = δ × W^T → shape(4,3)
+
+# ─── PyTorch の autograd で検証（結果が一致するはず）───
+X_pt = torch.tensor(X_np, dtype=torch.float32, requires_grad=True)
+W_pt = torch.tensor(W_np, dtype=torch.float32, requires_grad=True)
+b_pt = torch.tensor(b_np, dtype=torch.float32, requires_grad=True)
+
+y_pt   = X_pt @ W_pt + b_pt
+loss_pt = 0.5 * (y_pt ** 2).sum()
+loss_pt.backward()              # PyTorch が自動で逆伝播を計算
+
+# 手計算と autograd の結果を比較
+print("dL_dW 一致?", np.allclose(dL_dW, W_pt.grad.numpy()))  # → True
+print("dL_db 一致?", np.allclose(dL_db, b_pt.grad.numpy()))  # → True
+print("dL_dX 一致?", np.allclose(dL_dX, X_pt.grad.numpy()))  # → True
+print("✓ 手計算と PyTorch autograd の結果が完全に一致！")</pre>
+  </div>
+
+  <h4>ReLU層の逆伝播</h4>
+  <p>ReLU $\mathbf{y} = \max(0, \mathbf{x})$ の逆伝播は、順伝播時に正だった要素のみ勾配を通します：</p>
+  <div class="math-block">
+    $$\frac{\partial \mathcal{L}}{\partial \mathbf{x}} = \frac{\partial \mathcal{L}}{\partial \mathbf{y}} \odot \mathbb{1}[\mathbf{x} > 0]$$
+  </div>
+
+  <div class="column-box">
+    <span class="column-label">コラム — Dead Neuron問題</span>
+    <p>ReLUは $x \leq 0$ のとき勾配がゼロになります。もし学習中にニューロンの入力が常に負になると、そのニューロンの勾配は永遠にゼロのまま（Dead Neuron）になります。これを防ぐためにLeaky ReLU（負側に小さな傾き）やGELU（負側も微小に通す）が使われます。He初期化で初期値を適切に設定することも重要です。</p>
+  </div>
+
+  <div class="training">
+    <div class="label">学習時の計算コストと勾配問題</div>
+    <p>逆伝播の計算量は順伝播の<strong>約2倍</strong>（各層で $\partial W$ と $\partial X$ の2種類の行列積が必要）。学習全体のコストは推論の約3倍です。深い $L$ 層ネットワークでは勾配のノルムが $&lt;1$ なら指数的に消失し、$&gt;1$ なら爆発します。<strong>勾配クリッピング</strong>（<code>torch.nn.utils.clip_grad_norm_(params, 1.0)</code>）で爆発を防ぎます。</p>
+  </div>
+  <div class="inference">
+    <div class="label">推論時のコスト削減</div>
+    <p>推論は順伝播のみ。<code>torch.no_grad()</code> で計算グラフを構築しないため、中間テンソルのメモリ保持が不要です。量子化（INT8/INT4）、ONNX Export、Flash Attention などの推論専用最適化を適用できます。</p>
+  </div>
+
+  <div class="matome">
+    <span class="matome-label">本節のまとめ</span>
+    <ul>
+      <li>逆伝播は「連鎖律を使って出力から入力へ勾配を逆向きに伝える」アルゴリズム</li>
+      <li>全結合層の逆伝播：$\partial W = X^T \delta$、$\partial X = \delta W^T$（転置の積）</li>
+      <li>ReLUの逆伝播：順伝播で正だった要素のみ勾配を通す（ゲートとして機能）</li>
+      <li>学習コスト ≈ 推論の3倍。推論時は<code>no_grad()</code>でコスト削減</li>
+    </ul>
+  </div>
+
+  </div>
+</div>
+
+<!-- 学習テクニック -->
+<div class="topic" id="t-tricks" style="border-left-color:var(--month3)">
+  <h3>学習テクニック — 初期化・BN・Dropout <span class="day-tag">Day 53–57</span></h3>
+  <div class="topic-body">
+
+  <p class="topic-lead">「良いモデルアーキテクチャを選んだのに学習がうまくいかない」という状況はよくあります。重み初期化・Batch Normalization・Dropoutは「学習を安定させる」ための重要なテクニックです。実装は数行ですが、その背後の原理を理解することで、デバッグ能力が大きく向上します。</p>
+
+  <h4>重み初期化 — なぜゼロにしてはいけないのか</h4>
+  <p>適切な初期化がなければ、深い層の活性化値が0（勾配消失）や無限大（勾配爆発）に発散します。また、全パラメータをゼロにすると「対称性の破れ」が起きず、全ニューロンが同じ勾配を受け取り同じ更新をし続けます。</p>
+  <div class="math-block">
+    $$\text{Xavier: } W \sim \mathcal{N}\left(0, \frac{1}{n_{in}}\right), \quad \text{He: } W \sim \mathcal{N}\left(0, \frac{2}{n_{in}}\right)$$
+  </div>
+  <div class="code-block">
+    <span class="code-label">Python — Xavier初期化とHe初期化の実装</span>
+    <pre>import numpy as np
+
+def xavier_init(n_in, n_out):
+    """Sigmoid/Tanh向け：入出力の分散を保つ"""
+    std = np.sqrt(1.0 / n_in)
+    return np.random.randn(n_in, n_out) * std
+
+def he_init(n_in, n_out):
+    """ReLU向け：ReLUが半分をゼロにする分を補正"""
+    std = np.sqrt(2.0 / n_in)
+    return np.random.randn(n_in, n_out) * std
+
+# Heの根拠を確認
+# n_in個の N(0, σ²)の和の分散 = n_in × σ²
+# ReLUで半分がゼロ → 有効な分散は n_in × σ² / 2
+# これを1にするには σ² = 2/n_in
+n_in = 256
+W = he_init(n_in, 128)
+print(f"W の分散: {W.var():.4f}")          # ≈ 2/256 ≈ 0.0078
+print(f"W @ N(0,1) の分散: {(W @ np.random.randn(128)).var():.4f}")  # ≈ 1</pre>
+  </div>
+  <div class="math-note">分散を $\frac{1}{n_{in}}$ にする根拠：$n_{in}$ 個の独立な $\mathcal{N}(0, \sigma^2)$ 変数の和の分散は $n_{in}\sigma^2$。これを1にするには $\sigma^2 = 1/n_{in}$ と設定します。</div>
+
+  <h4>Batch Normalization — 内部共変量シフトを防ぐ</h4>
+  <div class="math-block">
+    $$\hat{x}_i = \frac{x_i - \mu_B}{\sqrt{\sigma_B^2 + \epsilon}}, \quad y_i = \gamma \hat{x}_i + \beta$$
+  </div>
+
+  <div class="visual">
+    <div class="label">BatchNorm のイメージ：「標準化された成績表」</div>
+    <p>国語（0〜100点）と数学（0〜10点）の点数をそのまま合計すると、国語が学習を支配してしまいます。BatchNormは「各バッチで平均0・分散1に変換」することで、全ての特徴量が対等な土俵で比較されるようにします。その後 $\gamma, \beta$ で「もし必要なら元のスケールに戻せる」ので情報の損失もありません。</p>
+  </div>
+
+  <div class="code-block">
+    <span class="code-label">Python — BatchNorm の学習/推論切り替えバグを体験する</span>
+    <pre>import torch
+import torch.nn as nn
+
+# ─── BatchNorm の内部状態を確認 ───
+bn = nn.BatchNorm1d(4)   # 4次元特徴量（説明のために小さく）
+
+# 初期状態
+print("初期 running_mean:", bn.running_mean)  # [0, 0, 0, 0]
+print("初期 running_var: ", bn.running_var)   # [1, 1, 1, 1]
+
+# ─── 学習時：バッチ統計を使い、移動平均を更新 ───
+bn.train()
+for i in range(5):
+    x = torch.randn(16, 4) * 3 + 2   # 平均2、標準偏差3のデータ
+    out = bn(x)
+    # バッチ内の平均・分散で正規化後、running_mean/var を更新
+    # running_mean = 0.9 × 前の値 + 0.1 × バッチ平均
+
+print("\n5バッチ後:")
+print("running_mean:", bn.running_mean.detach().round())  # ≈ [2,2,2,2]
+print("running_var: ", bn.running_var.detach().round())   # ≈ [9,9,9,9]
+# → 元のデータの平均(2)と分散(9=3²)に近づいている！
+
+# ─── 推論時：学習済みの running_mean/var を使う ───
+bn.eval()
+x_test = torch.randn(1, 4) * 3 + 2   # バッチサイズ1でもOK
+
+out_eval = bn(x_test)   # 学習中に蓄積した統計量を使用
+
+# ─── 最も多いバグ：model.eval() を忘れる ───
+bn.train()   # ← eval() 忘れ！
+out1 = bn(torch.randn(1, 4))
+out2 = bn(torch.randn(1, 4))
+# バッチサイズ1でバッチ統計を使うと、実行するたびに結果が変わる
+print("\n[バグ] 推論のたびに結果が変わる（eval()忘れ）")
+print(f"out1 mean: {out1.mean().item():.4f}")
+print(f"out2 mean: {out2.mean().item():.4f}")   # 毎回異なる値！</pre>
+  </div>
+
+  <div class="training">
+    <div class="label">学習時の BatchNorm</div>
+    <p>$\mu_B, \sigma_B^2$ はミニバッチ内の統計量で正規化。同時に移動平均を更新（<code>momentum=0.1</code>がデフォルト）：$\mu_{run} \leftarrow 0.9\mu_{run} + 0.1\mu_B$。効果：① 学習を大幅に高速化 ② 学習率への感度低下 ③ 正則化効果。バッチサイズ $B \lesssim 8$ では統計が不安定になります。</p>
+  </div>
+  <div class="inference">
+    <div class="label">推論時の BatchNorm（よくあるバグの発生源）</div>
+    <p>推論時はバッチ統計を使わず、<strong>学習中に蓄積した移動平均</strong> $\mu_{run}, \sigma_{run}^2$ を固定値として使用します。<code>model.eval()</code> で自動切り替えです。<code>model.eval()</code>を忘れると推論のたびに結果が変わります。TransformerではBNの代わりに<strong>LayerNorm</strong>（バッチサイズ非依存）が主流です。</p>
+  </div>
+
+  <h4>Dropout — 「あえて壊す」正則化</h4>
+  <div class="math-block">
+    $$\tilde{h}_i = \frac{h_i \cdot m_i}{1-p}, \quad m_i \sim \text{Bernoulli}(1-p)$$
+  </div>
+
+  <div class="visual">
+    <div class="label">Dropout のイメージ：「あえてメンバーを欠席させる練習」</div>
+    <p>スポーツチームで「毎回の練習でランダムに数人を欠席させる」想像をしてください。最初は不便ですが、チームは「誰かに頼りすぎない」戦術を自然に身に付けます。Dropoutも同じで「特定のニューロンにだけ頼った答え」を学習できなくなります。その結果、テストデータでも汎用的に使える堅牢な特徴表現が学習されます。</p>
+  </div>
+
+  <div class="code-block">
+    <span class="code-label">Python — Dropout の仕組みとスケーリングを確かめる</span>
+    <pre>import torch
+import torch.nn as nn
+
+# ─── Dropout の基本動作 ───
+dropout = nn.Dropout(p=0.5)   # p=0.5: 50%の確率でゼロにする
+x = torch.ones(1, 10)          # わかりやすく全て1のテンソル
+
+dropout.train()
+out1 = dropout(x)
+out2 = dropout(x)  # 毎回ランダムに異なるパターン
+
+print("学習時 out1:", out1)  # 例: [0, 2, 0, 2, 0, 2, 2, 0, 0, 2]
+print("学習時 out2:", out2)  # 例: [2, 0, 2, 0, 2, 0, 0, 2, 2, 0]
+# ↑ ゼロでない要素は 1 ÷ (1-0.5) = 2 倍にスケール
+# これで学習時と推論時の期待値が一致する（Inverted Dropout）
+
+dropout.eval()
+out3 = dropout(x)
+print("推論時 out3:", out3)   # 全て 1.0（Dropoutなし・スケールなし）
+
+# ─── なぜスケールが必要か ───
+# p=0.5 のとき、学習中の活性化の期待値 = 1 × 0.5 = 0.5
+# 推論時は全ニューロンを使うので期待値 = 1.0
+# → スケールなしだと「推論時に学習時の2倍の信号が流れる」不整合が起きる
+# Inverted Dropout: 学習時に 1/(1-p) をかけて期待値を合わせる
+print("\n期待値の確認（学習時）:", out1.mean().item())  # ≈ 1.0
+print("期待値の確認（推論時）:", out3.mean().item())   # = 1.0</pre>
+  </div>
+
+  <div class="training">
+    <div class="label">学習時の Dropout</div>
+    <p>$n$ 個のニューロンに対して $2^n$ 通りの「薄いサブネット」を同時に学習するアンサンブル効果があります。</p>
+  </div>
+  <div class="inference">
+    <div class="label">推論時の Dropout</div>
+    <p><code>model.eval()</code> で完全にオフ（全ニューロンを使用）。<strong>MC Dropout</strong>では推論時にあえて<code>model.train()</code>のまま複数回推論し、予測のばらつきから信頼度（不確実性）を推定します。</p>
+  </div>
+
+  <h4>学習率スケジューリング — 「最初は大きく、後で細かく」</h4>
+  <p>固定学習率には「最初は大きく動きたいが、終盤は細かく調整したい」という矛盾があります。スケジューリングで学習率を動的に変化させることで、両方を実現できます。</p>
+
+  <div class="visual">
+    <div class="label">学習率スケジューリングのイメージ</div>
+    <p>引越しのダンボール詰めに例えると：<br>
+    <strong>Warmup</strong>：まず部屋の全体像を把握する（最初は慎重に、少しずつ学習率を上げる）<br>
+    <strong>Cosine Decay</strong>：大まかに詰め終わったら、最後の隙間を丁寧に埋める（学習率をcos曲線で0に近づける）<br>
+    この2段階が現代LLMの標準です。</p>
+  </div>
+
+  <div class="code-block">
+    <span class="code-label">Python — 主要スケジューラの比較（Warmup + CosineAnnealing が現代標準）</span>
+    <pre>import torch
+import torch.nn as nn
+import numpy as np
+
+model = nn.Linear(10, 1)
+optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4)
+total_steps = 1000
+
+# ─── 1. StepLR：一定ステップごとに学習率を削減 ───
+scheduler_step = torch.optim.lr_scheduler.StepLR(
+    optimizer,
+    step_size=300,    # 300ステップごとに
+    gamma=0.1         # 0.1倍にする（3e-4 → 3e-5 → 3e-6）
+)
+# シンプルだが急激な変化で不安定になる場合がある
+
+# ─── 2. CosineAnnealingLR：cos曲線でなめらかに減衰 ───
+scheduler_cos = torch.optim.lr_scheduler.CosineAnnealingLR(
+    optimizer,
+    T_max=total_steps,  # 半周期ステップ数
+    eta_min=1e-6        # 最小学習率
+)
+# lr(t) = η_min + (η_max - η_min) × (1 + cos(π t/T)) / 2
+
+# ─── 3. LinearWarmup + CosineDecay（現代LLMの標準実装）───
+def get_lr_with_warmup(step, warmup_steps=100, max_lr=3e-4,
+                        total_steps=1000, min_lr=1e-6):
+    """
+    Warmup フェーズ: 学習率を 0 → max_lr に線形増加
+    Decay  フェーズ: max_lr → min_lr にコサイン減衰
+    理由:
+    - 最初は重みがランダムなので大きな学習率は危険
+    - Warmup で安全に学習を立ち上げる
+    - CosineDecay でなめらかに収束させる
+    """
+    if step < warmup_steps:
+        # Warmup: 0 → max_lr に線形増加
+        return max_lr * step / warmup_steps
+    else:
+        # CosineDecay: max_lr → min_lr
+        progress = (step - warmup_steps) / (total_steps - warmup_steps)
+        cos_val  = 0.5 * (1.0 + np.cos(np.pi * progress))
+        return min_lr + (max_lr - min_lr) * cos_val
+
+# 学習率の推移を確認
+print("Warmup + CosineDecay の学習率推移:")
+for step in [0, 50, 100, 200, 500, 800, 999]:
+    lr = get_lr_with_warmup(step)
+    bar = '█' * int(lr / 3e-4 * 20)
+    print(f"  step {step:4d}: lr={lr:.2e}  {bar}")
+
+# step    0: lr=0.00e+00  （スタートはゼロ）
+# step   50: lr=1.50e-04  ██████████  （Warmup中）
+# step  100: lr=3.00e-04  ████████████████████  （Warmup完了・ピーク）
+# step  200: lr=2.94e-04  ███████████████████   （ゆっくり減衰）
+# step  500: lr=1.50e-04  ██████████           （半分まで減衰）
+# step  800: lr=1.64e-05  █                    （ほぼ最小値）
+# step  999: lr=1.00e-06                       （最小学習率）
+
+# ─── PyTorch での実際の使い方 ───
+# optimizer.param_groups[0]['lr'] = get_lr_with_warmup(step)
+# optimizer.step()</pre>
+  </div>
+
+  <div class="ai-connection">
+    <div class="label">LLMでの実際の学習率設定</div>
+    <p>GPT-3（1750億パラメータ）の学習では max_lr=6e-5、warmup_steps=375（全ステップ300Bトークンの0.1%）というパラメータが使われました。Transformerの学習率は一般に小さい（1e-4程度）のに対し、CNNは1e-2程度から始めることが多く、モデルの種類によって適切な値が異なります。</p>
+  </div>
+
+  <div class="matome">
+    <span class="matome-label">本節のまとめ</span>
+    <ul>
+      <li>He初期化はReLU向け（係数が2）、Xavier初期化はSigmoid/Tanh向け。全ゼロは対称性が破れない</li>
+      <li>BatchNorm：学習時はバッチ統計、推論時は移動平均。<code>model.eval()</code>の切り替えを忘れない</li>
+      <li>LayerNorm：バッチサイズに依存しないためTransformerで主流。train/evalで挙動が変わらない</li>
+      <li>Dropout：学習時にランダムにニューロンを無効化、推論時はオフ。$2^n$ 通りのアンサンブル効果</li>
+      <li>学習率スケジューリング：Warmup（ゼロから立ち上げ）+ CosineDecay（なめらかに収束）が現代標準</li>
+    </ul>
+  </div>
+
+  </div>
+</div>
+
+<!-- 大規模学習テクニック -->
+<div class="topic" id="t-largescale" style="border-left-color:var(--month3)">
+  <h3>大規模学習テクニック <span class="day-tag">現代実践</span></h3>
+  <div class="topic-body">
+
+  <p class="topic-lead">GPT-4やLLaMAのような大規模モデルを学習するには、単純な順伝播・逆伝播だけでは到底GPUのメモリに収まりません。混合精度学習・勾配累積・勾配チェックポイントという3つのテクニックが現代の大規模学習の標準装備です。これらを理解することで、限られたGPUメモリでも大きなモデルを学習できるようになります。</p>
+
+  <div class="visual">
+    <div class="label">なぜメモリが足りなくなるのか</div>
+    <p>GPT-2（1.5億パラメータ）をfloat32で学習すると：<br>
+    ・モデルパラメータ：1.5億 × 4バイト = <strong>600MB</strong><br>
+    ・勾配：同じく600MB<br>
+    ・Adamの状態（m, v）：1.2GB<br>
+    ・中間活性化（バッチ依存）：数GB〜数十GB<br>
+    合計：軽く10GBを超える → 24GBのGPU(RTX 4090)でもギリギリ！<br><br>
+    これが「バッチサイズを1にしても学習できない」問題の正体です。</p>
+  </div>
+
+  <h4>① 混合精度学習（Mixed Precision / AMP）</h4>
+  <p>float32（32ビット）をfloat16またはbfloat16（16ビット）に切り替えてメモリを半分に削減します。ただし精度が落ちるため「重みの更新だけfloat32」のハイブリッド方式を取ります：</p>
+
+  <div class="code-block">
+    <span class="code-label">Python — PyTorchのAMP（Automatic Mixed Precision）完全ガイド</span>
+    <pre>import torch
+import torch.nn as nn
+from torch.cuda.amp import autocast, GradScaler
+
+model = nn.Sequential(
+    nn.Linear(1024, 4096), nn.ReLU(),
+    nn.Linear(4096, 4096), nn.ReLU(),
+    nn.Linear(4096, 1000)
+).cuda()
+
+optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4)
+
+# ─── GradScaler: fp16 の「勾配消失」問題を解決 ───
+# fp16 の最小正規化値は 6×10⁻⁵。損失が小さいと勾配がゼロになる
+# Scaler は損失を大きなスケールで計算し、更新前に元に戻す
+scaler = GradScaler()
+
+# ─── メモリ使用量の比較 ───
+def get_memory_mb():
+    return torch.cuda.memory_allocated() / 1024**2
+
+# float32 での通常の学習
+x = torch.randn(32, 1024).cuda()
+y = torch.randint(0, 1000, (32,)).cuda()
+
+# 通常学習（float32）
+model.train()
+optimizer.zero_grad()
+out = model(x)
+loss = nn.CrossEntropyLoss()(out, y)
+loss.backward()
+optimizer.step()
+
+# ─── AMP を使った学習（これが現代標準）───
+optimizer.zero_grad()
+
+with autocast(dtype=torch.float16):
+    # このブロック内は自動的に fp16 で計算される
+    # ・行列積(matmul): fp16 → 計算が 2〜4倍速く、メモリ半分
+    # ・BatchNorm, LayerNorm: fp32 を維持（精度が必要な演算）
+    out_amp = model(x)
+    loss_amp = nn.CrossEntropyLoss()(out_amp, y)
+
+# スケールして逆伝播（fp16 の勾配消失を防ぐ）
+scaler.scale(loss_amp).backward()
+
+# スケールを戻してパラメータ更新
+# ※ INF/NaN があったら自動スキップ（学習崩壊を防ぐ）
+scaler.step(optimizer)
+scaler.update()   # 次のステップのスケール値を自動調整
+
+# ─── bf16（bfloat16）の方が実は推奨される場合が多い ───
+# fp16: 精度が高い（仮数部10ビット）が、オーバーフロー/アンダーフローに注意
+# bf16: 範囲が広い（指数部8ビット=fp32と同じ）でスケーリング不要、安定
+# A100/H100/RTX 4090 では bf16 が最速
+with autocast(dtype=torch.bfloat16):
+    out_bf = model(x)
+    loss_bf = nn.CrossEntropyLoss()(out_bf, y)
+loss_bf.backward()   # bf16 は GradScaler 不要！
+optimizer.step()
+
+print("AMP (fp16/bf16) で学習完了")
+print("メモリ削減効果: 通常比 約40〜50% 削減（アクティベーションが fp16 になるため）")</pre>
+  </div>
+
+  <h4>② 勾配累積（Gradient Accumulation）</h4>
+  <p>「バッチサイズ256で学習したいがGPUに32しか乗らない」問題を解決します。8ステップ分の勾配を積算してから1回だけパラメータを更新することで、実効バッチサイズ256と等価になります：</p>
+  <div class="math-block">
+    $$\text{実効バッチサイズ} = \text{バッチサイズ} \times \text{累積ステップ数}$$
+  </div>
+
+  <div class="code-block">
+    <span class="code-label">Python — 勾配累積で実効バッチサイズを拡大する</span>
+    <pre>import torch
+import torch.nn as nn
+
+model = nn.Linear(512, 10).cuda()
+optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4)
+criterion = nn.CrossEntropyLoss()
+
+# 目標: バッチ256で学習 → GPUに64しか乗らない
+# 解決: 4ステップ分累積 → 実効バッチ = 64 × 4 = 256
+BATCH_SIZE    = 64
+ACCUM_STEPS   = 4    # 何ステップ分の勾配を累積するか
+EFFECTIVE_BS  = BATCH_SIZE * ACCUM_STEPS  # = 256
+
+optimizer.zero_grad()   # 最初に1回だけリセット
+
+for step in range(100):
+    x = torch.randn(BATCH_SIZE, 512).cuda()
+    y = torch.randint(0, 10, (BATCH_SIZE,)).cuda()
+
+    # ─── 重要：損失をバッチサイズで正規化 ───
+    # 累積する前に ACCUM_STEPS で割る
+    # → 最終的に「256サンプル分の平均損失」と等価になる
+    loss = criterion(model(x), y) / ACCUM_STEPS
+
+    loss.backward()   # 勾配を累積（zero_grad しないので加算される）
+
+    # ACCUM_STEPS ごとにパラメータを更新
+    if (step + 1) % ACCUM_STEPS == 0:
+        # 勾配クリッピング（この時点での累積勾配全体に適用）
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+        optimizer.step()
+        optimizer.zero_grad()   # 累積した勾配をリセット
+
+        actual_step = (step + 1) // ACCUM_STEPS
+        if actual_step % 5 == 0:
+            print(f"更新ステップ {actual_step}: loss={loss.item() * ACCUM_STEPS:.4f}")
+
+# ─── 注意点 ───
+# 1. BatchNorm を使う場合、各バッチが独立した統計を計算するため
+#    勾配累積と BatchNorm の組み合わせは厳密には異なる
+#    → Transformer（LayerNorm 使用）では問題なし
+# 2. AMP と組み合わせる場合は scaler.step() のタイミングも合わせる</pre>
+  </div>
+
+  <h4>③ 勾配チェックポイント（Gradient Checkpointing）</h4>
+  <p>順伝播時に中間活性化を保存しない代わりに、逆伝播時に必要な部分だけ再計算します。メモリを $O(\sqrt{L})$ に削減（$L$ 層）できますが、計算コストは約30〜40%増加します：</p>
+
+  <div class="code-block">
+    <span class="code-label">Python — Gradient Checkpointing でメモリを削減する</span>
+    <pre>import torch
+import torch.nn as nn
+from torch.utils.checkpoint import checkpoint
+
+class TransformerBlockSimple(nn.Module):
+    """簡略化したTransformerブロック"""
+    def __init__(self, d=512):
+        super().__init__()
+        self.ln  = nn.LayerNorm(d)
+        self.ffn = nn.Sequential(
+            nn.Linear(d, d*4), nn.GELU(), nn.Linear(d*4, d)
+        )
+    def forward(self, x):
+        return x + self.ffn(self.ln(x))
+
+# 24層のTransformer
+layers = nn.ModuleList([TransformerBlockSimple(512) for _ in range(24)])
+x = torch.randn(8, 512, 512, requires_grad=True).cuda()
+
+# ─── 通常の順伝播（全活性化を保存 → メモリ大）───
+# メモリ: O(L) = 24層分の中間テンソルを全保持
+def forward_normal(x):
+    for layer in layers:
+        x = layer(x)
+    return x
+
+# ─── Gradient Checkpointing（メモリ節約）───
+# メモリ: O(√L) ≈ 5層分のみ保存、残りは逆伝播時に再計算
+def forward_checkpoint(x):
+    for layer in layers:
+        # checkpoint: 順伝播を再計算可能な関数として登録
+        # 中間活性化を保存しない代わりに逆伝播時に再計算する
+        x = checkpoint(layer, x, use_reentrant=False)
+    return x
+
+# メモリ使用量の比較
+torch.cuda.empty_cache()
+mem_before = torch.cuda.memory_allocated() / 1024**2
+
+out_normal = forward_normal(x)
+mem_normal = torch.cuda.memory_allocated() / 1024**2
+
+torch.cuda.empty_cache()
+out_ckpt = forward_checkpoint(x)
+mem_ckpt = torch.cuda.memory_allocated() / 1024**2
+
+print(f"通常の順伝播  メモリ: {mem_normal - mem_before:.1f} MB")
+print(f"Checkpointing メモリ: {mem_ckpt  - mem_before:.1f} MB")
+print(f"削減率: {(1 - (mem_ckpt - mem_before) / (mem_normal - mem_before)):.1%}")
+# → 通常: ~800 MB, Checkpoint: ~200 MB, 削減率: ~75%
+
+# PyTorch の公式サポート
+from transformers import AutoModelForCausalLM
+# model.gradient_checkpointing_enable() で一行で有効化できる</pre>
+  </div>
+
+  <h4>④ 分散学習 — 複数GPUで並列学習</h4>
+  <div class="code-block">
+    <span class="code-label">Python — DDP（分散データ並列）の基本パターン</span>
+    <pre>import torch
+import torch.nn as nn
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
+
+# ─── DDP の仕組み ───
+# 1. 各GPUに同じモデルのコピーを持つ
+# 2. 各GPUが異なるバッチを処理（データ並列）
+# 3. 逆伝播後、全GPUの勾配を AllReduce で平均
+# 4. 全GPUで同じパラメータ更新 → モデルの一貫性を保つ
+
+# torchrun --nproc_per_node=4 train.py で4GPU起動
+# def main():
+#     dist.init_process_group(backend='nccl')  # GPU間通信(NCCL)
+#     rank = dist.get_rank()         # このプロセスのGPU番号(0,1,2,3)
+#     device = torch.device(f'cuda:{rank}')
+#
+#     model = MyModel().to(device)
+#     model = DDP(model, device_ids=[rank])  # DDPでラップ
+#
+#     # データを各GPUに分配（DistributedSampler使用）
+#     sampler = DistributedSampler(dataset, num_replicas=4, rank=rank)
+#     loader  = DataLoader(dataset, sampler=sampler, batch_size=64)
+#
+#     # 学習ループは通常と同じ（DDP が自動で勾配を同期）
+#     for x, y in loader:
+#         out = model(x.to(device))
+#         loss = criterion(out, y.to(device))
+#         loss.backward()        # 各GPUで逆伝播 → AllReduce で勾配平均
+#         optimizer.step()
+#         optimizer.zero_grad()
+
+# ─── 並列化の種類と使い分け ───
+print("""
+並列化の種類：
+┌──────────────────┬──────────────────────────────────────────┐
+│ データ並列(DDP)    │ 同じモデル、異なるデータ → 最もシンプル    │
+│ テンソル並列       │ 1層の重み行列を複数GPUに分割              │
+│ パイプライン並列    │ 異なる層を異なるGPUに割り当て             │
+│ ZeRO (DeepSpeed) │ 状態・勾配・パラメータを全GPU に分散        │
+└──────────────────┴──────────────────────────────────────────┘
+GPT-3(1750億パラメータ): テンソル並列96 × パイプライン並列12 = 1152 GPU
+""")</pre>
+  </div>
+
+  <div class="ai-connection">
+    <div class="label">実務での組み合わせ（現代の標準学習スタック）</div>
+    <p>大規模モデルの学習では以下を組み合わせるのが標準：<br>
+    <strong>AMP (bf16)</strong> + <strong>勾配累積（8〜16ステップ）</strong> + <strong>Gradient Checkpointing</strong> + <strong>Flash Attention</strong> + <strong>DDP または DeepSpeed ZeRO</strong><br><br>
+    単一A100(80GB)でLLaMA-7Bのフルファインチューニングをするにはこれら全てが必要です。QLoRAを使えばさらに24GBのGPUでも可能になります（Month 6で解説）。</p>
+  </div>
+
+  <div class="matome">
+    <span class="matome-label">本節のまとめ</span>
+    <ul>
+      <li>混合精度(AMP)：bf16/fp16で計算しfp32で更新。メモリ40〜50%削減・計算2〜4倍高速化</li>
+      <li>勾配累積：N小バッチの勾配を積算してから更新 = 実効バッチサイズN倍。OOMを回避できる</li>
+      <li>Gradient Checkpointing：中間活性化を保存せず再計算。メモリO(√L)、計算コスト+30〜40%</li>
+      <li>分散学習(DDP)：各GPUが同じモデルを持ち、AllReduceで勾配を同期して並列学習</li>
+    </ul>
+  </div>
+
+  </div>
+</div>
+
+<div class="page-nav">
+  <a href="month2.html">
+    <div class="nav-label">← 前のページ</div>
+    <div class="nav-title">Month 2: 古典的機械学習</div>
+  </a>
+  <a href="month4.html" class="next">
+    <div class="nav-label">次のページ →</div>
+    <div class="nav-title">Month 4: CNN — 畳み込みの数学</div>
+  </a>
+</div>
+
+</div><!-- /container -->
+<button id="back-to-top" onclick="window.scrollTo({top:0,behavior:'smooth'})" title="先頭へ戻る">↑</button>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [{left:"$$",right:"$$",display:true},{left:"$",right:"$",display:false}],
+    throwOnError: false
+  });
+  document.querySelectorAll('.topic').forEach(topic => {
+    const h3 = topic.querySelector('h3');
+    if (!h3) return;
+    h3.addEventListener('click', () => topic.classList.toggle('collapsed'));
+  });
+  const bar = document.getElementById('progress-bar');
+  const btn = document.getElementById('back-to-top');
+  const tocLinks = document.querySelectorAll('.page-toc a');
+  const topics = document.querySelectorAll('.topic[id]');
+  window.addEventListener('scroll', () => {
+    const h = document.documentElement;
+    bar.style.width = Math.min((h.scrollTop / (h.scrollHeight - h.clientHeight)) * 100, 100) + '%';
+    btn.classList.toggle('visible', h.scrollTop > 400);
+    let current = '';
+    topics.forEach(t => { if (t.getBoundingClientRect().top <= 100) current = t.id; });
+    tocLinks.forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#' + current));
+  }, { passive: true });
+});
+</script>
+</body>
+</html>

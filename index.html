@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI学習 数学・理論 参考資料</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
+<link rel="stylesheet" href="ai_math_style.css">
+</head>
+<body>
+<div id="progress-bar"></div>
+<div class="container">
+
+<div class="hero">
+  <h1>AI学習 数学・理論 参考資料</h1>
+  <p class="subtitle">NumPyスクラッチ実装カリキュラム 全130日対応<br>数学的基礎 → AIモデルへの接続を体系的に解説</p>
+</div>
+
+<!-- Month カード -->
+<div class="month-grid">
+  <a class="month-card" href="month1.html" style="border-left-color:var(--month1)">
+    <div class="card-badge" style="color:var(--month1)">MONTH 1 · Day 1–20</div>
+    <h2>数学基礎</h2>
+    <div class="card-topics">線形代数 · 微分と最適化<br>確率統計 · 情報理論<br>データ前処理と評価指標</div>
+  </a>
+  <a class="month-card" href="month2.html" style="border-left-color:var(--month2)">
+    <div class="card-badge" style="color:var(--month2)">MONTH 2 · Day 21–42</div>
+    <h2>古典的機械学習</h2>
+    <div class="card-topics">線形回帰 · 正則化<br>ロジスティック回帰 · Softmax<br>アンサンブル · 次元削減</div>
+  </a>
+  <a class="month-card" href="month3.html" style="border-left-color:var(--month3)">
+    <div class="card-badge" style="color:var(--month3)">MONTH 3 · Day 43–62</div>
+    <h2>ニューラルネットワーク基礎</h2>
+    <div class="card-topics">MLP · 活性化関数<br>誤差逆伝播法 · 計算グラフ<br>BatchNorm · Dropout · 初期化</div>
+  </a>
+  <a class="month-card" href="month4.html" style="border-left-color:var(--month4)">
+    <div class="card-badge" style="color:var(--month4)">MONTH 4 · Day 63–77</div>
+    <h2>CNN — 畳み込みの数学</h2>
+    <div class="card-topics">2D畳み込み · im2col<br>出力サイズ計算<br>ResNet · Skip Connection</div>
+  </a>
+  <a class="month-card" href="month5.html" style="border-left-color:var(--month5)">
+    <div class="card-badge" style="color:var(--month5)">MONTH 5 · Day 78–102</div>
+    <h2>RNN · Attention · Transformer</h2>
+    <div class="card-topics">LSTM · 勾配消失の数学<br>Scaled Dot-Product Attention · KVキャッシュ<br>RoPE · LayerNorm · GPT vs BERT</div>
+  </a>
+  <a class="month-card" href="month6.html" style="border-left-color:var(--month6)">
+    <div class="card-badge" style="color:var(--month6)">MONTH 6 · Day 103–130</div>
+    <h2>生成モデル · 強化学習 · NLP</h2>
+    <div class="card-topics">VAE · GAN · Diffusion Model<br>強化学習 · RLHF · DPO<br>Word2Vec → Transformer Embedding</div>
+  </a>
+</div>
+
+<!-- 全体マップ -->
+<div class="topic" style="border-left-color:var(--accent4);margin-top:10px;">
+  <h3>数学概念 → AIモデル 全体マップ</h3>
+  <div class="topic-body">
+  <div class="table-wrap"><table>
+    <tr><th>数学概念</th><th>使用箇所</th><th>🔄 学習時</th><th>🚀 推論時</th><th>重要度</th></tr>
+    <tr><td>行列積</td><td>全結合層、Attention、埋め込み</td><td>順伝播 + 逆伝播（転置積）</td><td>順伝播のみ、量子化で高速化</td><td>★★★★★</td></tr>
+    <tr><td>連鎖律（微分）</td><td>誤差逆伝播法</td><td>計算グラフを逆にたどり全勾配を計算</td><td>不要（<code>no_grad()</code>）</td><td>★★★★★</td></tr>
+    <tr><td>確率・Softmax</td><td>分類出力、言語モデルの次トークン確率</td><td>交差エントロピー損失で最大化</td><td>温度スケーリング・Top-pサンプリング</td><td>★★★★★</td></tr>
+    <tr><td>情報理論 (KL, CE)</td><td>損失関数、VAE、知識蒸留</td><td>CE最小化 = MLE。KLで正則化</td><td>確率キャリブレーション評価</td><td>★★★★★</td></tr>
+    <tr><td>最適化（Adam等）</td><td>パラメータ更新</td><td>$m_t, v_t$ を管理しパラメータ更新</td><td>不要（パラメータ固定）</td><td>★★★★★</td></tr>
+    <tr><td>内積・コサイン類似度</td><td>Attention スコア、類似度検索</td><td>QK<sup>T</sup> の行列積でスコアを計算</td><td>KVキャッシュと組み合わせ高速化</td><td>★★★★★</td></tr>
+    <tr><td>固有値・SVD</td><td>PCA、LoRA、モデル圧縮</td><td>LoRA: $\Delta W=BA$ で少パラメータ学習</td><td>量子化・枝刈りで重み行列を低ランク近似</td><td>★★★★</td></tr>
+    <tr><td>BatchNorm / LayerNorm</td><td>各層の正規化</td><td>BN: バッチ統計で正規化、移動平均更新</td><td>BN: 移動平均を使用。LN: 変わらず</td><td>★★★★</td></tr>
+    <tr><td>畳み込み</td><td>CNN（画像・音声）</td><td>フィルタ重みをim2col経由で学習</td><td>整数量子化CNNで組み込みデバイス対応</td><td>★★★★</td></tr>
+    <tr><td>再帰関係</td><td>RNN/LSTM</td><td>BPTT（時間方向逆伝播）</td><td>逐次状態更新（$O(T)$, キャッシュなし）</td><td>★★★</td></tr>
+    <tr><td>三角関数</td><td>位置エンコーディング（RoPE等）</td><td>PE を埋め込みに加算（固定or学習）</td><td>RoPE: Q,Kに回転行列を適用</td><td>★★★</td></tr>
+    <tr><td>確率過程・SDE</td><td>Diffusion Model の前向き/逆過程</td><td>ランダムステップ $t$ でノイズを加算しMSE学習</td><td>$T$ ステップ逆拡散（DDIM で高速化）</td><td>★★★</td></tr>
+    <tr><td>マルコフ決定過程</td><td>強化学習、RLHF</td><td>PPO/DPO で報酬最大化 + KLペナルティ</td><td>Greedy/Beam/サンプリングでデコード</td><td>★★★</td></tr>
+  </table></div>
+  </div>
+</div>
+
+</div><!-- /container -->
+<button id="back-to-top" onclick="window.scrollTo({top:0,behavior:'smooth'})" title="先頭へ戻る">↑</button>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [{left:"$$",right:"$$",display:true},{left:"$",right:"$",display:false}],
+    throwOnError: false
+  });
+  // collapsible
+  document.querySelectorAll('.topic').forEach(topic => {
+    const h3 = topic.querySelector('h3');
+    if (!h3) return;
+    const body = topic.querySelector('.topic-body');
+    if (!body) return;
+    h3.addEventListener('click', () => topic.classList.toggle('collapsed'));
+  });
+  // progress + back-to-top
+  const bar = document.getElementById('progress-bar');
+  const btn = document.getElementById('back-to-top');
+  window.addEventListener('scroll', () => {
+    const h = document.documentElement;
+    bar.style.width = Math.min((h.scrollTop / (h.scrollHeight - h.clientHeight)) * 100, 100) + '%';
+    btn.classList.toggle('visible', h.scrollTop > 400);
+  }, { passive: true });
+});
+</script>
+</body>
+</html>

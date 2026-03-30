@@ -1,0 +1,933 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Month 4: CNN — AI学習参考資料</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
+<link rel="stylesheet" href="ai_math_style.css">
+</head>
+<body>
+<div id="progress-bar"></div>
+<div class="container">
+
+<nav class="site-nav">
+  <a href="index.html">🏠 ホーム</a>
+  <span class="sep">/</span>
+  <a href="month1.html">Month 1</a>
+  <span class="sep">/</span>
+  <a href="month2.html">Month 2</a>
+  <span class="sep">/</span>
+  <a href="month3.html">Month 3</a>
+  <span class="sep">/</span>
+  <a href="month4.html" class="current">Month 4</a>
+  <span class="sep">/</span>
+  <a href="month5.html">Month 5</a>
+  <span class="sep">/</span>
+  <a href="month6.html">Month 6</a>
+</nav>
+
+<div class="page-header">
+  <span class="month-badge" style="background:var(--month4);color:#fff;">MONTH 4</span>
+  <h1>CNN — 畳み込みニューラルネットワーク</h1>
+</div>
+
+<div class="page-toc">
+  <h3>このページの内容</h3>
+  <a href="#t-conv">畳み込み演算の数学（Day 63–66）</a>
+  <a href="#t-pool">Pooling層（Day 63–66）</a>
+  <a href="#t-resnet">ResNetと残差学習（Day 67–69）</a>
+  <a href="#t-vit">Vision Transformer（ViT）— CNNの次へ</a>
+</div>
+
+<!-- 畳み込み -->
+<div class="topic" id="t-conv" style="border-left-color:var(--month4)">
+  <h3>畳み込み演算の数学 <span class="day-tag">Day 63–66</span></h3>
+  <div class="topic-body">
+
+  <p class="topic-lead">「全結合層（MLP）だけで画像を処理すればいいのでは？」という疑問は自然です。224×224の画像を全結合層に入れると入力次元は150,528になり、隠れ層1024なら約1.5億パラメータが第1層だけで必要です。CNNは「空間的な局所性」と「重みの共有」という2つの帰納バイアスで、このパラメータ数を劇的に削減します。</p>
+
+  <div class="visual">
+    <div class="label">畳み込みのイメージ：「スタンプを押しながら画像をスキャンする」</div>
+    <p>小さな「スタンプ（カーネル）」を画像の左上から右下に向かってスライドさせながら押していきます。各位置で「スタンプと画像のパターンがどれだけ一致するか（内積）」を計算して出力します。<br><br>
+    例えば「縦エッジ検出カーネル」は縦線がある部分で大きな値を出力します。これらのカーネルの形は人が決めるのではなく、<strong>学習によって自動的に発見</strong>されます。</p>
+  </div>
+
+  <h4>2D畳み込みを手で計算する</h4>
+  <p>入力 $I$（画像）にカーネル $K$ を適用し、出力特徴マップを生成します：</p>
+  <div class="math-block">
+    $$(I * K)(i, j) = \sum_{m}\sum_{n} I(i+m, j+n) \cdot K(m, n)$$
+  </div>
+
+  <div class="code-block">
+    <span class="code-label">Python — 畳み込みを NumPy で手実装して PyTorch と比較する</span>
+    <pre>import numpy as np
+import torch
+import torch.nn as nn
+
+# 5×5の単純な「縦エッジ検出カーネル」
+kernel = np.array([[-1, 0, 1],
+                   [-2, 0, 2],
+                   [-1, 0, 1]])  # Sobelフィルタ
+
+# 6×6の入力画像（グレースケール）
+image = np.array([
+    [1, 2, 3, 4, 5, 6],
+    [1, 2, 3, 4, 5, 6],
+    [1, 2, 3, 4, 5, 6],
+    [1, 2, 3, 4, 5, 6],
+])
+
+# 手動畳み込み（ストライド=1、パディング=0）
+def naive_conv2d(img, kernel):
+    H, W = img.shape
+    k = kernel.shape[0]
+    out_h, out_w = H - k + 1, W - k + 1
+    out = np.zeros((out_h, out_w))
+    for i in range(out_h):
+        for j in range(out_w):
+            out[i, j] = (img[i:i+k, j:j+k] * kernel).sum()
+    return out
+
+result = naive_conv2d(image, kernel)
+print("出力サイズ:", result.shape)   # (2, 4)
+print("縦エッジが大きい列に注目:")
+print(result)</pre>
+  </div>
+
+  <h4>出力サイズの計算式</h4>
+  <div class="math-block">
+    $$O = \left\lfloor \frac{H + 2P - K}{S} \right\rfloor + 1$$
+  </div>
+  <div class="table-wrap"><table>
+    <tr><th>記号</th><th>意味</th><th>典型値</th></tr>
+    <tr><td>$H$</td><td>入力サイズ（高さまたは幅）</td><td>224（ImageNet）</td></tr>
+    <tr><td>$K$</td><td>カーネルサイズ</td><td>3（3×3カーネル）</td></tr>
+    <tr><td>$P$</td><td>パディング（ゼロ埋め）</td><td>1（same padding）</td></tr>
+    <tr><td>$S$</td><td>ストライド（スライド幅）</td><td>1（通常）/ 2（ダウンサンプル）</td></tr>
+    <tr><td>$O$</td><td>出力サイズ</td><td>例: $(224+2-3)/1+1 = 224$</td></tr>
+  </table></div>
+
+  <div class="code-block">
+    <span class="code-label">Python — Conv2d の形状変化を段階的に追跡する</span>
+    <pre>import torch
+import torch.nn as nn
+
+# バッチサイズ4、RGB（3ch）、32×32の画像（CIFARサイズ）
+x = torch.randn(4, 3, 32, 32)
+print(f"入力: {x.shape}")   # → [4, 3, 32, 32]  (batch, ch, H, W)
+
+# ------------------------------------------------------------------
+# Layer 1: 64種類の3×3フィルタ、パディング=1でサイズ保持
+# パラメータ数: out_ch × in_ch × K × K + bias
+#            = 64 × 3 × 3 × 3 + 64 = 1,792
+conv1 = nn.Conv2d(in_channels=3, out_channels=64,
+                  kernel_size=3, padding=1, stride=1)
+out1 = conv1(x)
+print(f"Conv1 後: {out1.shape}")   # → [4, 64, 32, 32]  サイズ変わらず
+
+params1 = sum(p.numel() for p in conv1.parameters())
+print(f"  パラメータ数: {params1:,}")   # → 1,792
+
+# 全結合層なら必要なパラメータ数（比較用）
+fc_params = 3 * 32 * 32 * 64   # in_features × out_features
+print(f"  全結合層なら: {fc_params:,} ≈ {fc_params//params1}倍多い")
+# → 全結合層なら: 196,608 ≈ 109倍多い
+
+# ------------------------------------------------------------------
+# Layer 2: ストライド=2でダウンサンプリング（プーリング不要にする手法）
+# 出力サイズ: (32 + 2×1 - 3) / 2 + 1 = 16
+conv2 = nn.Conv2d(64, 128, kernel_size=3, padding=1, stride=2)
+out2 = conv2(out1)
+print(f"Conv2 後: {out2.shape}")   # → [4, 128, 16, 16]  空間が半分に
+
+# ------------------------------------------------------------------
+# Layer 3: 1×1 Conv（チャンネルミキシング、空間サイズは変えない）
+# 1×1 は「線形結合でチャンネルを変換する」= 全結合層の空間版
+conv3 = nn.Conv2d(128, 256, kernel_size=1)
+out3 = conv3(out2)
+print(f"Conv3 後: {out3.shape}")   # → [4, 256, 16, 16]  チャンネルだけ増加
+
+# ------------------------------------------------------------------
+# MaxPooling でさらに空間を圧縮
+pool = nn.MaxPool2d(kernel_size=2, stride=2)
+out4 = pool(out3)
+print(f"Pool 後 : {out4.shape}")   # → [4, 256, 8, 8]
+
+# ------------------------------------------------------------------
+# Flatten → 全結合層（分類ヘッド）
+flat = out4.flatten(start_dim=1)
+print(f"Flatten : {flat.shape}")   # → [4, 16384]  (256×8×8=16384)
+
+fc = nn.Linear(256 * 8 * 8, 10)   # 10クラス分類
+logits = fc(flat)
+print(f"最終出力: {logits.shape}")  # → [4, 10]  各サンプルの10クラス スコア</pre>
+  </div>
+
+  <h4>im2col：畳み込みを行列積に変換</h4>
+  <p>カーネルが重なる入力パッチを列に展開し、畳み込みを行列積 $\text{col} \times W_{reshaped}$ に変換します。これによりGPUの高速な行列演算ライブラリ（cuBLAS等）を直接活用でき、計算が劇的に高速化されます。</p>
+  <div class="math-note">パッチを展開すると入力データが数倍に膨らむためメモリ増加はありますが、GPUの並列性を最大活用できるため実用上は十分高速です。PyTorchの<code>nn.Conv2d</code>は内部でこれを行っています。</div>
+
+  <div class="ai-connection">
+    <div class="label">CNNの3つの重要な帰納バイアス</div>
+    <p><strong>① 局所性</strong>：各ニューロンは入力の一部分（受容野）のみを見る → 空間的局所パターンを効率的に捉える<br>
+    <strong>② 重み共有</strong>：同じフィルタを全位置に適用 → パラメータ数が劇的に少ない（MLPの1/100以下）<br>
+    <strong>③ 並進等変性</strong>：猫が画像のどこにいても同じフィルタで検出 → データ効率が高い</p>
+  </div>
+
+  <div class="training">
+    <div class="label">学習時の畳み込みの逆伝播</div>
+    <p>畳み込みの逆伝播は「転置畳み込み（Transposed Convolution）」に相当します。im2col展開後は通常の行列積の逆伝播（転置積）と同じ形になります。</p>
+  </div>
+  <div class="inference">
+    <div class="label">推論時の最適化</div>
+    <p>Winograd convolution（小カーネルで乗算数を削減）や FFT-based convolution（大カーネルで有効）などの推論専用アルゴリズムが使われます。モバイル向けでは Depthwise Separable Convolution（MobileNet）でパラメータ数と計算量を約9倍削減します。</p>
+  </div>
+
+  <div class="code-block">
+    <span class="code-label">Python — 通常の Conv2d vs Depthwise Separable Conv（パラメータ数比較）</span>
+    <pre>import torch
+import torch.nn as nn
+
+# 目標: 64ch → 128ch の変換を効率的に行う
+
+# ------------------------------------------------------------------
+# ① 通常の畳み込み
+# パラメータ数: 128 × 64 × 3 × 3 = 73,728
+standard_conv = nn.Conv2d(64, 128, kernel_size=3, padding=1)
+params_std = sum(p.numel() for p in standard_conv.parameters())
+print(f"通常 Conv2d         : {params_std:,} パラメータ")  # → 73,728
+
+# ------------------------------------------------------------------
+# ② Depthwise Separable Convolution（MobileNet の核心技術）
+# Step A: Depthwise Conv（チャンネルごとに独立して3×3 Conv）
+#   groups=in_ch にすると「各チャンネルに1つのフィルタ」を割り当て
+#   パラメータ数: 64 × 1 × 3 × 3 = 576
+depthwise = nn.Conv2d(64, 64, kernel_size=3, padding=1, groups=64)
+
+# Step B: Pointwise Conv（1×1 Conv でチャンネルを統合・変換）
+#   パラメータ数: 128 × 64 × 1 × 1 = 8,192
+pointwise = nn.Conv2d(64, 128, kernel_size=1)
+
+params_dw = sum(p.numel() for p in depthwise.parameters())
+params_pw = sum(p.numel() for p in pointwise.parameters())
+params_total = params_dw + params_pw
+
+print(f"Depthwise Conv      : {params_dw:,} パラメータ")   # → 576
+print(f"Pointwise Conv      : {params_pw:,} パラメータ")   # → 8,192
+print(f"合計                : {params_total:,} パラメータ") # → 8,768
+
+ratio = params_std / params_total
+print(f"削減率: 通常の 1/{ratio:.0f}  ({1/ratio:.1%} のパラメータ数)")
+# → 削減率: 通常の 1/8  (12.5% のパラメータ数)
+
+# ---- 実際に同じ入力に適用して形状を確認 ----
+x = torch.randn(4, 64, 28, 28)
+out_std = standard_conv(x)
+out_dws = pointwise(depthwise(x))
+print(f"通常 Conv 出力:  {out_std.shape}")  # → [4, 128, 28, 28]
+print(f"Depthwise 出力: {out_dws.shape}")  # → [4, 128, 28, 28]  同じ！</pre>
+  </div>
+
+  <div class="point-box">
+    <span class="point-label">ポイント</span>
+    <p>CNNの強さは「局所性 + 重み共有 + 並進等変性」という3つの帰納バイアスにあります。これが画像データに対して特に有効な理由です。逆に言えば、表形式データや長距離依存のあるタスクではこのバイアスが不利になります。</p>
+  </div>
+
+  <div class="matome">
+    <span class="matome-label">本節のまとめ</span>
+    <ul>
+      <li>畳み込みは「カーネルを滑らせながら内積を計算する」操作。出力サイズは $(H+2P-K)/S+1$</li>
+      <li>重み共有により、全結合層の1/100以下のパラメータ数で同等以上の性能を発揮</li>
+      <li>im2colで畳み込みを行列積に変換してGPUの並列性を活用している</li>
+      <li>3つの帰納バイアス（局所性・重み共有・並進等変性）が画像タスクでの強さの源</li>
+    </ul>
+  </div>
+
+  </div>
+</div>
+
+<!-- Pooling -->
+<div class="topic" id="t-pool" style="border-left-color:var(--month4)">
+  <h3>Pooling層 — 空間サイズを小さくする <span class="day-tag">Day 63–66</span></h3>
+  <div class="topic-body">
+
+  <p class="topic-lead">畳み込みは特徴を検出しますが、出力の空間サイズはほとんど変わりません（padding=1の場合）。「猫の耳」という特徴が画像の左上にあっても右下にあっても同じと判定したい（位置不変性）。また画像が大きいほど後続の全結合層のパラメータが爆発します。Pooling層はこの2つの問題を解決する「縮小演算」です。</p>
+
+  <div class="visual">
+    <div class="label">Pooling のイメージ：「高解像度の地図を縮小する」</div>
+    <p>詳細地図（縮尺1:1000）は情報が多いが使いにくい。重要な場所（山、駅、川）だけを残した縮小地図（縮尺1:10000）のほうが「大局を把握する」のに向いています。<br><br>
+    <strong>MaxPooling</strong>：区画内の「最も強い反応（特徴の有無）」だけを残す。エッジ検出などに向く<br>
+    <strong>AvgPooling</strong>：区画内の平均を取る。全体の「雰囲気」を掴むのに向く。最終分類層前のGlobal Average Poolingで特に使われる</p>
+  </div>
+
+  <h4>MaxPool と AvgPool を手で実装する</h4>
+  <div class="math-block">
+    $$\text{MaxPool}(i,j) = \max_{0 \le m,n < k} X(i \cdot s + m,\; j \cdot s + n)$$
+  </div>
+
+  <div class="code-block">
+    <span class="code-label">Python — MaxPool / AvgPool を NumPy で手実装して PyTorch と比較する</span>
+    <pre>import numpy as np
+import torch
+import torch.nn as nn
+
+# ─── 4×4 の特徴マップ（値が大きいほど強い反応）───
+X = np.array([
+    [1,  3,  2,  4],
+    [5,  6,  7,  8],   # ← この行に大きな値が集中
+    [0,  2,  1,  3],
+    [9,  1,  5,  2],
+])
+print("入力 (4×4):\n", X)
+
+# ─── MaxPool2D（カーネル=2×2、ストライド=2）を手実装 ───
+def maxpool2d(x, k=2, stride=2):
+    H, W = x.shape
+    out_h = (H - k) // stride + 1
+    out_w = (W - k) // stride + 1
+    out   = np.zeros((out_h, out_w))
+
+    for i in range(out_h):
+        for j in range(out_w):
+            # 2×2 の区画の最大値を取る
+            patch = x[i*stride : i*stride+k,
+                      j*stride : j*stride+k]
+            out[i, j] = patch.max()   # 区画内の最大値
+    return out
+
+# ─── AvgPool2D（カーネル=2×2、ストライド=2）を手実装 ───
+def avgpool2d(x, k=2, stride=2):
+    H, W = x.shape
+    out_h = (H - k) // stride + 1
+    out_w = (W - k) // stride + 1
+    out   = np.zeros((out_h, out_w))
+
+    for i in range(out_h):
+        for j in range(out_w):
+            patch = x[i*stride : i*stride+k,
+                      j*stride : j*stride+k]
+            out[i, j] = patch.mean()  # 区画内の平均
+    return out
+
+max_out = maxpool2d(X)
+avg_out = avgpool2d(X)
+
+print("\nMaxPool 出力 (2×2):")
+print(max_out)
+# [[6, 8],    ← 左上の区画の最大は6、右上の区画の最大は8
+#  [9, 5]]    ← 左下は9、右下は5
+
+print("\nAvgPool 出力 (2×2):")
+print(avg_out)
+# [[3.75, 5.25],   ← 各区画の平均
+#  [3.0,  2.75]]
+
+# ─── PyTorch の実装と比較（形状確認）───
+x_pt = torch.tensor(X, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
+# (1, 1, 4, 4)  (batch, channel, H, W)
+
+max_pool = nn.MaxPool2d(kernel_size=2, stride=2)
+avg_pool = nn.AvgPool2d(kernel_size=2, stride=2)
+
+print(f"\nMaxPool PyTorch:\n{max_pool(x_pt).squeeze().numpy()}")
+print(f"AvgPool PyTorch:\n{avg_pool(x_pt).squeeze().numpy()}")
+# → 手実装と完全一致</pre>
+  </div>
+
+  <h4>MaxPool の逆伝播 — 勾配はどこへ流れるか</h4>
+  <p>MaxPoolの順伝播では「最大値を選んだ位置（argmax）」を記憶しておきます。逆伝播では最大値だった場所にだけ勾配を返し、他の位置はゼロになります。</p>
+
+  <div class="code-block">
+    <span class="code-label">Python — MaxPool の逆伝播（マスクを使った実装）</span>
+    <pre>import numpy as np
+
+def maxpool_with_backward(x, k=2, stride=2):
+    """MaxPool の順伝播 + 逆伝播のためのマスク記録"""
+    H, W = x.shape
+    out_h = (H - k) // stride + 1
+    out_w = (W - k) // stride + 1
+    out   = np.zeros((out_h, out_w))
+    # どの位置が最大値だったかを記録する「マスク」
+    mask  = np.zeros_like(x, dtype=bool)
+
+    for i in range(out_h):
+        for j in range(out_w):
+            patch = x[i*stride:i*stride+k, j*stride:j*stride+k]
+            # 最大値の「相対位置」を求める
+            max_idx = np.unravel_index(patch.argmax(), patch.shape)
+            # グローバル座標に変換してマスクをオン
+            gi = i * stride + max_idx[0]
+            gj = j * stride + max_idx[1]
+            mask[gi, gj] = True
+            out[i, j] = x[gi, gj]
+
+    return out, mask
+
+def maxpool_backward(d_out, mask, x_shape, k=2, stride=2):
+    """MaxPool の逆伝播：最大値の位置にだけ勾配を流す"""
+    d_x = np.zeros(x_shape)
+    out_h, out_w = d_out.shape
+    for i in range(out_h):
+        for j in range(out_w):
+            gi = i * stride
+            gj = j * stride
+            # この 2×2 パッチの中でマスクがオンの場所に勾配を配置
+            for m in range(k):
+                for n in range(k):
+                    if mask[gi+m, gj+n]:
+                        d_x[gi+m, gj+n] += d_out[i, j]  # 最大位置にだけ！
+    return d_x
+
+X = np.array([[1.,3.,2.,4.],[5.,6.,7.,8.],[0.,2.,1.,3.],[9.,1.,5.,2.]])
+out, mask = maxpool_with_backward(X)
+
+print("MaxPool 出力:\n", out)
+print("\nどの位置が最大値だったか（マスク）:")
+print(mask.astype(int))
+# [[0,0,0,0],
+#  [0,1,0,1],   ← (1,1)の6と(1,3)の8が最大
+#  [0,0,0,0],
+#  [1,0,1,0]]   ← (3,0)の9と(3,2)の5が最大
+
+# 上流から全て1の勾配が来たとして逆伝播
+d_out = np.ones_like(out)
+d_x   = maxpool_backward(d_out, mask, X.shape)
+print("\n逆伝播後の勾配（最大値の位置だけ1）:")
+print(d_x)
+# → 最大値だった位置にだけ1が立ち、それ以外は0</pre>
+  </div>
+
+  <h4>Global Average Pooling（GAP）— 現代CNNの分類ヘッド</h4>
+  <p>VGGなどの古典的CNNは最後に全結合層を使いましたが、ResNet以降は<strong>Global Average Pooling</strong>が標準です。特徴マップ全体を空間方向に平均して1つの値にまとめます。</p>
+
+  <div class="code-block">
+    <span class="code-label">Python — Global Average Pooling vs 全結合（パラメータ数を比較）</span>
+    <pre>import torch
+import torch.nn as nn
+
+# 最後の畳み込み層の出力: (batch=4, 512ch, 7×7)
+features = torch.randn(4, 512, 7, 7)
+
+# ─── 古典的手法: Flatten → 全結合 ───
+# パラメータ数: 512×7×7 × 1000 = 25,088,000
+fc_head = nn.Linear(512 * 7 * 7, 1000)
+flat = features.flatten(start_dim=1)   # → (4, 25088)
+out_fc = fc_head(flat)
+params_fc = sum(p.numel() for p in fc_head.parameters())
+
+# ─── 現代的手法: Global Average Pooling → 全結合 ───
+# パラメータ数: 512 × 1000 = 512,000 （49倍削減！）
+gap  = nn.AdaptiveAvgPool2d(1)         # H,W を (1,1) に圧縮
+fc2  = nn.Linear(512, 1000)
+out_gap = fc2(gap(features).squeeze(-1).squeeze(-1))  # (4,512) → (4,1000)
+params_gap = sum(p.numel() for p in fc2.parameters())
+
+print(f"Flatten+FC のパラメータ数: {params_fc:,}")    # → 25,089,000
+print(f"GAP+FC     のパラメータ数: {params_gap:,}")   # →    513,000
+print(f"削減率: {params_fc / params_gap:.0f}倍 少ない")  # → 49倍！
+print(f"出力形状（同じ）: FC={out_fc.shape}, GAP={out_gap.shape}")</pre>
+  </div>
+
+  <div class="ai-connection">
+    <div class="label">なぜ現代はGAPを使うのか</div>
+    <p>全結合層は「7×7の特徴マップを25088次元ベクトルとして扱う」ため、入力画像の解像度が変わるとそのまま使えません（パラメータが入力サイズに依存）。GAPは「空間平均を取る」だけなので任意の入力サイズに対応できます。また過学習しにくく、Dropout不要で同等の性能が出ます。</p>
+  </div>
+
+  <div class="matome">
+    <span class="matome-label">本節のまとめ</span>
+    <ul>
+      <li>MaxPool：各区画の最大値だけを残す。「特徴が少しずれてもOK」という位置不変性を持つ</li>
+      <li>MaxPoolの逆伝播：順伝播で最大値だった位置にだけ勾配を返し、他はゼロ</li>
+      <li>AvgPool：各区画の平均。Global Average Pooling（GAP）は最終分類ヘッドで全結合層の代わりに使う</li>
+      <li>GAPにより全結合層比で49倍パラメータ削減、任意解像度の入力に対応できる</li>
+    </ul>
+  </div>
+
+  </div>
+</div>
+
+<!-- ResNet -->
+<div class="topic" id="t-resnet" style="border-left-color:var(--month4)">
+  <h3>ResNetと残差学習 <span class="day-tag">Day 67–69</span></h3>
+  <div class="topic-body">
+
+  <p class="topic-lead">「ネットワークを深くすれば性能が上がる」と考えて20層、50層と積み重ねてみると、実は浅いネットワークより性能が落ちてしまう「劣化問題（degradation problem）」が起きます。勾配消失が原因です。2015年、Heらは驚くほどシンプルなアイデアでこれを解決しました。それが残差接続（Skip Connection）です。</p>
+
+  <div class="visual">
+    <div class="label">Skip Connection のイメージ：「情報の高速道路」</div>
+    <p>普通の道路（通常の層）だけでは、100km先（100層先）まで情報を届けるのに渋滞が起きて信号がスカスカになります（勾配消失）。<br>
+    Skip Connectionは「どの層からでも直接つながる高速道路」です。情報と勾配がこの道路で瞬時に届くため、どんなに深いネットワークでも安定して学習できます。ネットワークは「理想の答えを一から作る」のではなく「入力に少しだけ修正を加える（残差を学習する）」という、ずっと簡単な問題を解けばよくなります。</p>
+  </div>
+
+  <h4>Skip Connection の数式とコード</h4>
+  <p>ブロックの出力に入力 $\mathbf{x}$ をそのまま加算します：</p>
+  <div class="math-block">
+    $$\mathbf{y} = F(\mathbf{x}, \{W_i\}) + \mathbf{x}$$
+  </div>
+
+  <div class="code-block">
+    <span class="code-label">Python — ResNet BasicBlock を実装してテンソル形状を追跡する</span>
+    <pre>import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+class BasicBlock(nn.Module):
+    """ResNet-18/34で使われる2層のBasicBlock
+
+    構造: Conv3x3 → BN → ReLU → Conv3x3 → BN → (+x) → ReLU
+    ポイント: 最後のReLUをSkip Connection加算の「後」に適用する
+    """
+    def __init__(self, in_channels, out_channels, stride=1):
+        super().__init__()
+        # ① 1つ目の畳み込み（stride でダウンサンプリングも担当）
+        self.conv1 = nn.Conv2d(in_channels, out_channels,
+                               kernel_size=3, stride=stride, padding=1, bias=False)
+        # bias=False: BatchNormが平均を引くのでbiasは冗長
+        self.bn1   = nn.BatchNorm2d(out_channels)
+
+        # ② 2つ目の畳み込み（サイズは変えない）
+        self.conv2 = nn.Conv2d(out_channels, out_channels,
+                               kernel_size=3, stride=1, padding=1, bias=False)
+        self.bn2   = nn.BatchNorm2d(out_channels)
+
+        # ③ Skip Connection の射影（チャンネル数やサイズが変わるときだけ必要）
+        #    stride=1 かつ in==out なら「恒等写像（何もしない）」でOK
+        self.shortcut = nn.Sequential()
+        if stride != 1 or in_channels != out_channels:
+            # 1×1 Conv でチャンネル数とサイズを合わせる
+            self.shortcut = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, kernel_size=1,
+                          stride=stride, bias=False),
+                nn.BatchNorm2d(out_channels)
+            )
+
+    def forward(self, x):
+        # 入力 x を shortcut としてキャッシュ
+        identity = self.shortcut(x)   # サイズ変化がない場合は x そのもの
+
+        out = self.conv1(x)            # ① Conv3x3（ストライドでダウンサンプル）
+        out = self.bn1(out)            # ② BatchNorm
+        out = F.relu(out)              # ③ ReLU
+
+        out = self.conv2(out)          # ④ Conv3x3（サイズ保持）
+        out = self.bn2(out)            # ⑤ BatchNorm（ReLU は後で）
+
+        out = out + identity           # ⑥ Skip Connection 加算（これが核心！）
+        out = F.relu(out)              # ⑦ 加算後に ReLU（順番が重要）
+        return out
+
+
+# ---- 動作確認：テンソル形状を追跡 ----
+# ケース1: チャンネル数 64→64（stride=1, shortcut は恒等写像）
+block1 = BasicBlock(64, 64, stride=1)
+x1 = torch.randn(4, 64, 56, 56)   # (batch=4, C=64, H=56, W=56)
+y1 = block1(x1)
+print(f"ケース1: {x1.shape} → {y1.shape}")
+# → ケース1: torch.Size([4, 64, 56, 56]) → torch.Size([4, 64, 56, 56])
+
+# ケース2: チャンネル数 64→128、stride=2（shortcut に 1×1 Conv が入る）
+block2 = BasicBlock(64, 128, stride=2)
+x2 = torch.randn(4, 64, 56, 56)
+y2 = block2(x2)
+print(f"ケース2: {x2.shape} → {y2.shape}")
+# → ケース2: torch.Size([4, 64, 56, 56]) → torch.Size([4, 128, 28, 28])
+#   チャンネル: 64→128、空間サイズ: 56→28（stride=2 でダウンサンプル）
+
+# パラメータ数の比較
+params = sum(p.numel() for p in block2.parameters())
+print(f"BasicBlock パラメータ数: {params:,}")  # → 148,736</pre>
+  </div>
+
+  <h4>Bottleneckブロック — より深く、より効率よく</h4>
+  <p>ResNet-50以降では BasicBlock の代わりに「1×1→3×3→1×1」の Bottleneck を使います。3×3 Conv に渡すチャンネル数を $1/4$ に削減することで、計算量を抑えながら深くできます：</p>
+  <div class="code-block">
+    <span class="code-label">Python — Bottleneck ブロック（ResNet-50/101/152 で使われる構造）</span>
+    <pre>class Bottleneck(nn.Module):
+    """1×1→3×3→1×1 の3層構造でパラメータを節約する
+
+    例: 256ch 入力 → 64ch（圧縮）→ 64ch（3×3）→ 256ch（復元）
+    計算コスト: BasicBlock の約1/4（3×3 Conv を当たる ch 数が少ない）
+    """
+    expansion = 4  # 出力ch = 入力ch × 4
+
+    def __init__(self, in_channels, bottleneck_channels, stride=1):
+        super().__init__()
+        out_channels = bottleneck_channels * self.expansion  # 例: 64×4=256
+
+        # ① 1×1 Conv: チャンネルを圧縮（256 → 64）
+        self.conv1 = nn.Conv2d(in_channels, bottleneck_channels, 1, bias=False)
+        self.bn1   = nn.BatchNorm2d(bottleneck_channels)
+
+        # ② 3×3 Conv: 小さいチャンネルで空間特徴を抽出（64 → 64）
+        self.conv2 = nn.Conv2d(bottleneck_channels, bottleneck_channels,
+                               3, stride=stride, padding=1, bias=False)
+        self.bn2   = nn.BatchNorm2d(bottleneck_channels)
+
+        # ③ 1×1 Conv: チャンネルを復元（64 → 256）
+        self.conv3 = nn.Conv2d(bottleneck_channels, out_channels, 1, bias=False)
+        self.bn3   = nn.BatchNorm2d(out_channels)
+
+        # Skip Connection（必要な場合のみ射影）
+        self.shortcut = nn.Sequential()
+        if stride != 1 or in_channels != out_channels:
+            self.shortcut = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, 1, stride, bias=False),
+                nn.BatchNorm2d(out_channels)
+            )
+
+    def forward(self, x):
+        identity = self.shortcut(x)
+
+        out = F.relu(self.bn1(self.conv1(x)))   # 256→64  (1×1 圧縮)
+        out = F.relu(self.bn2(self.conv2(out)))  # 64→64   (3×3 特徴抽出)
+        out = self.bn3(self.conv3(out))          # 64→256  (1×1 復元)
+
+        out = out + identity   # Skip Connection
+        return F.relu(out)
+
+
+# ---- パラメータ数の比較 ----
+# BasicBlock(128ch→128ch) vs Bottleneck(128ch圧縮, 入力256ch)
+basic      = BasicBlock(256, 256, stride=1)
+bottleneck = Bottleneck(256, 64,  stride=1)  # 64×4=256 出力
+
+p_basic = sum(p.numel() for p in basic.parameters())
+p_btl   = sum(p.numel() for p in bottleneck.parameters())
+print(f"BasicBlock  パラメータ数: {p_basic:,}")      # → 1,180,672
+print(f"Bottleneck  パラメータ数: {p_btl:,}")        # →   70,400
+print(f"削減率: {1 - p_btl/p_basic:.1%}")            # → 94.0% 削減！</pre>
+  </div>
+
+  <h4>なぜ深い層が学習できるようになるのか — 勾配の視点</h4>
+  <p>逆伝播での勾配を見てみましょう：</p>
+  <div class="math-block">
+    $$\frac{\partial \mathbf{y}}{\partial \mathbf{x}} = \frac{\partial F}{\partial \mathbf{x}} + I$$
+  </div>
+  <p>恒等行列 $I$ の存在により、$F$ の勾配がゼロに近くても勾配は常に少なくとも $I$ 分だけ伝播します。これにより100層以上のネットワークでも安定して学習が可能になりました。</p>
+
+  <div class="ai-connection">
+    <div class="label">TransformerのAdd & Normはこの原理の継承</div>
+    <p>Transformerブロックでも同じ構造が使われています：<br>
+    $\mathbf{z}' = \text{LayerNorm}(\mathbf{x} + \text{MultiHead}(\mathbf{x}))$<br>
+    これはまさに「入力 $\mathbf{x}$ にAttentionの出力（残差）を加算する」ResNetと同じ構造です。現代のDeep Learningアーキテクチャは例外なくこのSkip Connectionを採用しています。</p>
+  </div>
+
+  <h4>ResNetのアーキテクチャ進化</h4>
+  <div class="table-wrap"><table>
+    <tr><th>モデル</th><th>層数</th><th>特徴</th></tr>
+    <tr><td>ResNet-18/34</td><td>18/34層</td><td>BasicBlock（3×3 Conv × 2）</td></tr>
+    <tr><td>ResNet-50/101/152</td><td>50〜152層</td><td>Bottleneck（1×1→3×3→1×1）でパラメータ削減</td></tr>
+    <tr><td>ResNeXt</td><td>同上</td><td>グループ畳み込みで表現力向上</td></tr>
+    <tr><td>EfficientNet</td><td>可変</td><td>深さ・幅・解像度をNASで最適スケーリング</td></tr>
+  </table></div>
+
+  <div class="training">
+    <div class="label">学習時：Bottleneckブロックの利点</div>
+    <p>1×1 Conv → 3×3 Conv → 1×1 Conv の構造で、3×3 Conv に渡すチャンネル数を1/4に削減します。例えば入力チャンネル256 → 64 → 64 → 256 とすることで、計算量を約9倍削減しながら同等の表現力を維持します。</p>
+  </div>
+
+  <div class="column-box">
+    <span class="column-label">コラム — ResNetは何を学習しているか</span>
+    <p>Skip ConnectionがあるとネットワークはF(x)≈0（恒等写像）を初期状態として学習を始められます。これは「理想の出力に対して必要な修正分（残差）だけを学習する」ことを意味します。勾配ブースティングで「各ステップが残差を学習する」のと本質的に同じアイデアです。この視点から「深いResNetは多数の浅いネットワークのアンサンブル」とも解釈できます。</p>
+  </div>
+
+  <div class="matome">
+    <span class="matome-label">本節のまとめ</span>
+    <ul>
+      <li>Skip Connection（残差接続）により100層以上の深いネットワークが学習可能になった</li>
+      <li>勾配に恒等行列 $I$ が加わることで、深い層でも勾配が消失しなくなる</li>
+      <li>ネットワークは「理想の答え全体」ではなく「修正分（残差）だけ」を学習すればよい</li>
+      <li>TransformerのAdd & Normは同じ原理で、現代のDeep Learningに普遍的</li>
+    </ul>
+  </div>
+
+  </div>
+</div>
+
+<!-- Vision Transformer -->
+<div class="topic" id="t-vit" style="border-left-color:var(--month4)">
+  <h3>Vision Transformer（ViT）— CNNの次の世代 <span class="day-tag">最新技術</span></h3>
+  <div class="topic-body">
+
+  <p class="topic-lead">「画像はCNNで処理する」というのが2020年まで常識でした。しかし2020年、Google Brainの研究チームが「CNNを一切使わず、Transformerだけで最高精度を達成できる」ことを示しました。それがVision Transformer（ViT）です。大量データがあれば、CNNの「局所性・重み共有」という帰納バイアスは不要で、Transformerの「全体を見るSelf-Attention」の方が優れていることを証明しました。</p>
+
+  <div class="visual">
+    <div class="label">ViT のイメージ：「画像をトークン列に変換してTransformerに渡す」</div>
+    <p>ViTのアイデアはシンプルです：<br>
+    <strong>Step 1</strong>：画像を16×16ピクセルの「パッチ（断片）」に分割<br>
+    → 224×224画像は 14×14 = <strong>196個のパッチ</strong>になる<br>
+    <strong>Step 2</strong>：各パッチをflattenして線形変換 → 「画像トークン」に変換<br>
+    <strong>Step 3</strong>：文章のトークン列と全く同じようにTransformerで処理<br><br>
+    つまり「画像を英単語のように扱う」のがViTの核心です。</p>
+  </div>
+
+  <h4>ViTのアーキテクチャを実装する</h4>
+  <div class="math-block">
+    $$\mathbf{z}_0 = [\mathbf{x}_{cls}; \mathbf{x}_p^1 E; \mathbf{x}_p^2 E; \ldots; \mathbf{x}_p^N E] + \mathbf{E}_{pos}$$
+  </div>
+  <p>$E \in \mathbb{R}^{(P^2 \cdot C) \times D}$ はパッチの埋め込み行列、$\mathbf{x}_{cls}$ は分類用の特別なトークンです。</p>
+
+  <div class="code-block">
+    <span class="code-label">Python — ViT のパッチ埋め込みから分類まで完全実装</span>
+    <pre>import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import math
+
+class PatchEmbedding(nn.Module):
+    """
+    画像をパッチに分割して埋め込みベクトルに変換する
+    例: 224×224×3 → 196トークン × 768次元
+    """
+    def __init__(self, img_size=224, patch_size=16, in_ch=3, embed_dim=768):
+        super().__init__()
+        self.patch_size = patch_size
+        # パッチ数: (224/16)² = 196
+        self.n_patches = (img_size // patch_size) ** 2
+
+        # 1つのConv2d で「パッチ分割 + 線形変換」を同時に実現
+        # kernel_size=patch_size, stride=patch_size → 重なりなしで分割
+        self.proj = nn.Conv2d(in_ch, embed_dim,
+                              kernel_size=patch_size, stride=patch_size)
+
+    def forward(self, x):
+        # x: (B, 3, 224, 224)
+        x = self.proj(x)          # → (B, 768, 14, 14)  パッチごとの埋め込み
+        x = x.flatten(2)          # → (B, 768, 196)      空間次元をflatten
+        x = x.transpose(1, 2)     # → (B, 196, 768)      トークン列の形式に
+        return x
+
+
+class VisionTransformer(nn.Module):
+    """
+    ViT-Base の簡略実装
+    ViT-Base: patch=16, embed=768, heads=12, layers=12
+    """
+    def __init__(self, img_size=224, patch_size=16,
+                 in_ch=3, n_classes=1000,
+                 embed_dim=768, depth=12,
+                 n_heads=12, mlp_ratio=4.0,
+                 dropout=0.1):
+        super().__init__()
+        n_patches = (img_size // patch_size) ** 2
+
+        # ─── 1. パッチ埋め込み ───
+        self.patch_embed = PatchEmbedding(img_size, patch_size, in_ch, embed_dim)
+
+        # ─── 2. [CLS] トークン（分類に使う特別なトークン）───
+        # BERTの[CLS]と同じ考え方：「この画像全体を表すベクトル」
+        self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
+
+        # ─── 3. 位置埋め込み（CLS含む 197トークン分）───
+        self.pos_embed = nn.Parameter(
+            torch.zeros(1, n_patches + 1, embed_dim)
+        )
+        nn.init.trunc_normal_(self.pos_embed, std=0.02)
+
+        self.pos_drop = nn.Dropout(dropout)
+
+        # ─── 4. Transformer ブロック × depth 層 ───
+        self.blocks = nn.ModuleList([
+            nn.TransformerEncoderLayer(
+                d_model=embed_dim,
+                nhead=n_heads,
+                dim_feedforward=int(embed_dim * mlp_ratio),
+                dropout=dropout,
+                activation='gelu',
+                batch_first=True,
+                norm_first=True    # Pre-LN（現代標準）
+            )
+            for _ in range(depth)
+        ])
+
+        # ─── 5. 最終 LayerNorm + 分類ヘッド ───
+        self.norm = nn.LayerNorm(embed_dim)
+        self.head = nn.Linear(embed_dim, n_classes)
+
+        # 重みの初期化
+        nn.init.trunc_normal_(self.cls_token, std=0.02)
+
+    def forward(self, x):
+        B = x.shape[0]
+
+        # Step 1: パッチを埋め込みベクトルに変換
+        x = self.patch_embed(x)              # (B, 196, 768)
+
+        # Step 2: [CLS] トークンを先頭に追加
+        cls = self.cls_token.expand(B, -1, -1)  # (B, 1, 768)
+        x   = torch.cat([cls, x], dim=1)         # (B, 197, 768)
+
+        # Step 3: 位置埋め込みを加算（各トークンに「位置」情報を与える）
+        x   = self.pos_drop(x + self.pos_embed)  # (B, 197, 768)
+
+        # Step 4: 12層のTransformerブロックで処理
+        # Self-Attention で 197トークン全てが互いに参照できる！
+        for block in self.blocks:
+            x = block(x)                          # (B, 197, 768)
+
+        # Step 5: [CLS]トークンのみ取り出して分類
+        cls_out = self.norm(x[:, 0])              # (B, 768)  ← 位置0が[CLS]
+        return self.head(cls_out)                 # (B, 1000)
+
+
+# ─── 動作確認 ───
+vit = VisionTransformer(img_size=224, patch_size=16, n_classes=1000)
+x   = torch.randn(4, 3, 224, 224)   # バッチ4枚のRGB画像
+
+with torch.no_grad():
+    out = vit(x)
+print(f"入力:  {x.shape}")     # → [4, 3, 224, 224]
+print(f"出力:  {out.shape}")   # → [4, 1000]
+
+# パラメータ数
+params = sum(p.numel() for p in vit.parameters()) / 1e6
+print(f"パラメータ数: {params:.1f}M")  # → ~86M (ViT-Base)</pre>
+  </div>
+
+  <h4>CNN vs ViT — 何が根本的に違うのか</h4>
+  <div class="code-block">
+    <span class="code-label">Python — CNN と ViT の受容野の違いを可視化する</span>
+    <pre>import torch
+import torch.nn as nn
+
+# ─── CNNの受容野：局所的で段階的に広がる ───
+# 3×3 Conv を5層重ねた場合の受容野
+# 第1層: 3×3 ピクセルを見る
+# 第2層: 5×5 ピクセルを見る
+# 第3層: 7×7 ピクセルを見る
+# 第5層: 11×11 ピクセル（224×224の5%）しか見えない！
+
+def receptive_field_cnn(n_layers, kernel=3):
+    rf = 1
+    for _ in range(n_layers):
+        rf += (kernel - 1)
+    return rf
+
+for n in [1, 3, 5, 10, 20]:
+    rf = receptive_field_cnn(n)
+    print(f"  Conv × {n:2d} 層: 受容野 = {rf:3d}×{rf:3d}px "
+          f"（224×224 の {rf**2/224**2*100:.1f}%）")
+
+print()
+# Conv ×  1 層: 受容野 =   3×3px （0.0%）
+# Conv ×  5 層: 受容野 =  11×11px （0.2%）
+# Conv × 20 層: 受容野 =  41×41px （3.3%）
+
+# ─── ViT の受容野：第1層から画像全体 ───
+print("ViT の受容野（Self-Attention）:")
+print("  第1ブロックから: 196トークン全て (= 画像の100%) を参照可能！")
+print("  → 猫の目を見ながら同時に尻尾も参照できる")
+print()
+
+# ─── それぞれの得意・不得意 ───
+comparison = """
+┌─────────────────┬──────────────────────┬──────────────────────┐
+│                 │       CNN            │       ViT            │
+├─────────────────┼──────────────────────┼──────────────────────┤
+│ 受容野          │ 局所的（段階拡大）    │ 全体（第1層から）    │
+│ パラメータ数    │ 少ない（重み共有）    │ 多い                 │
+│ 小データ性能    │ 高い（帰納バイアス）  │ 低い（過学習しやすい）│
+│ 大データ性能    │ ~~限界あり~~         │ 高い（スケーラブル）  │
+│ 計算コスト      │ 効率的               │ O(T²)（注意が必要）  │
+│ 転移学習        │ 良い                 │ とても良い(JFT-300M) │
+│ 2024年の主流    │ EfficientNet系       │ ViT-L/G、DINOv2      │
+└─────────────────┴──────────────────────┴──────────────────────┘
+"""
+print(comparison)</pre>
+  </div>
+
+  <h4>DINOv2 — 教師なし ViT の最前線</h4>
+  <div class="code-block">
+    <span class="code-label">Python — DINOv2（Meta AI）で特徴量を抽出する（事前学習済みモデル）</span>
+    <pre>import torch
+
+# Meta AI の DINOv2（2023年）を使って特徴量を抽出
+# 教師なし学習（ラベルなしデータ）だけで ImageNet 最高性能を達成
+model = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitb14')
+model.eval()
+
+# 14×14 パッチサイズ: 224×224 → (224/14)² = 256 トークン
+x = torch.randn(4, 3, 224, 224)
+
+with torch.no_grad():
+    # register_tokens など DINOv2 特有の出力
+    features = model(x)   # → (4, 768) CLS トークンの特徴量
+    print(f"特徴量 shape: {features.shape}")  # → [4, 768]
+
+# 用途：
+# - 画像検索（コサイン類似度）
+# - 少数ショット分類（kNN分類）
+# - セマンティックセグメンテーション（パッチ特徴量を使用）
+# - 深度推定 など
+
+# DINOv2 は「ラベルなし」で学習しているため、
+# 医療画像・衛星画像・工業画像など特殊ドメインへの転移も強い</pre>
+  </div>
+
+  <div class="ai-connection">
+    <div class="label">ViTが切り開いた統一アーキテクチャの時代</div>
+    <p>ViTの登場は「CNNは画像、RNNはテキスト」という分野別アーキテクチャの時代を終わらせました。<br>
+    <strong>画像</strong>：ViT (Google) → DINOv2 (Meta) → EVA (BAAI)<br>
+    <strong>テキスト+画像</strong>：CLIP (OpenAI) → Florence (Microsoft) → LLaVA<br>
+    <strong>動画</strong>：Video ViT → Sora（動画拡散モデルはViTベース）<br>
+    <strong>点群(3D)</strong>：Point ViT<br>
+    同じTransformerが全モダリティを統一して処理できるようになりました。</p>
+  </div>
+
+  <div class="matome">
+    <span class="matome-label">本節のまとめ</span>
+    <ul>
+      <li>ViTは画像を16×16パッチに分割してトークン列に変換し、Transformerで処理する</li>
+      <li>[CLS]トークンが画像全体を代表し、分類ヘッドの入力になる</li>
+      <li>CNNは少データで強い（帰納バイアス）、ViTは大データで強い（スケーラブル）</li>
+      <li>Self-Attentionにより第1層から画像全体を参照できる（CNNは局所的に段階拡大）</li>
+      <li>DINOv2などの教師なしViTは汎用視覚特徴量として様々なタスクに活用できる</li>
+    </ul>
+  </div>
+
+  </div>
+</div>
+
+<div class="page-nav">
+  <a href="month3.html">
+    <div class="nav-label">← 前のページ</div>
+    <div class="nav-title">Month 3: ニューラルネットワーク基礎</div>
+  </a>
+  <a href="month5.html" class="next">
+    <div class="nav-label">次のページ →</div>
+    <div class="nav-title">Month 5: RNN・Attention・Transformer</div>
+  </a>
+</div>
+
+</div><!-- /container -->
+<button id="back-to-top" onclick="window.scrollTo({top:0,behavior:'smooth'})" title="先頭へ戻る">↑</button>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [{left:"$$",right:"$$",display:true},{left:"$",right:"$",display:false}],
+    throwOnError: false
+  });
+  document.querySelectorAll('.topic').forEach(topic => {
+    const h3 = topic.querySelector('h3');
+    if (!h3) return;
+    h3.addEventListener('click', () => topic.classList.toggle('collapsed'));
+  });
+  const bar = document.getElementById('progress-bar');
+  const btn = document.getElementById('back-to-top');
+  const tocLinks = document.querySelectorAll('.page-toc a');
+  const topics = document.querySelectorAll('.topic[id]');
+  window.addEventListener('scroll', () => {
+    const h = document.documentElement;
+    bar.style.width = Math.min((h.scrollTop / (h.scrollHeight - h.clientHeight)) * 100, 100) + '%';
+    btn.classList.toggle('visible', h.scrollTop > 400);
+    let current = '';
+    topics.forEach(t => { if (t.getBoundingClientRect().top <= 100) current = t.id; });
+    tocLinks.forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#' + current));
+  }, { passive: true });
+});
+</script>
+</body>
+</html>

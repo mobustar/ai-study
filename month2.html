@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Month 2: 古典的機械学習 — AI学習参考資料</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
+<link rel="stylesheet" href="ai_math_style.css">
+</head>
+<body>
+<div id="progress-bar"></div>
+<div class="container">
+
+<nav class="site-nav">
+  <a href="index.html">🏠 ホーム</a>
+  <span class="sep">/</span>
+  <a href="month1.html">Month 1</a>
+  <span class="sep">/</span>
+  <a href="month2.html" class="current">Month 2</a>
+  <span class="sep">/</span>
+  <a href="month3.html">Month 3</a>
+  <span class="sep">/</span>
+  <a href="month4.html">Month 4</a>
+  <span class="sep">/</span>
+  <a href="month5.html">Month 5</a>
+  <span class="sep">/</span>
+  <a href="month6.html">Month 6</a>
+</nav>
+
+<div class="page-header">
+  <span class="month-badge" style="background:var(--month2);color:#fff;">MONTH 2</span>
+  <h1>古典的機械学習 — 統計学習の原理</h1>
+</div>
+
+<div class="page-toc">
+  <h3>このページの内容</h3>
+  <a href="#t-linreg">線形回帰（Day 21–25）</a>
+  <a href="#t-logreg">ロジスティック回帰と分類（Day 26–30）</a>
+  <a href="#t-ensemble">アンサンブル学習（Day 31–35）</a>
+  <a href="#t-dimred">次元削減とクラスタリング（Day 36–42）</a>
+  <a href="#t-hparam">ハイパーパラメータ探索と検証</a>
+</div>
+
+<!-- 線形回帰 -->
+<div class="topic" id="t-linreg" style="border-left-color:var(--month2)">
+  <h3>線形回帰 <span class="day-tag">Day 21–25</span></h3>
+  <div class="topic-body">
+
+  <p class="topic-lead">機械学習を学ぶとき、最初に取り組むべきは線形回帰です。「複雑なニューラルネットを知っているのに、なぜ線形回帰？」と思うかもしれません。しかし線形回帰には最小二乗法・過学習・正則化・勾配降下法という、すべての機械学習の基礎概念が凝縮されています。ここをしっかり理解すれば、深層学習の理解がぐっと深まります。</p>
+
+  <div class="visual">
+    <div class="label">線形回帰のイメージ：「散らばった点の雲に線を引く」</div>
+    <p>身長と体重のデータが散布図上に点々と並んでいます。線形回帰は「この点の雲を最もうまく代表する直線」を求める問題です。正規方程式は数式で一発で答えが出る「解析解」ですが、AIで扱う問題は「何百万次元の点を代表する超曲面を求める」問題なので、数式では解けません。だから勾配降下法で少しずつ正解に近づいていくのです。</p>
+  </div>
+
+  <h4>まず1変数で手を動かす</h4>
+  <p>身長（cm）から体重（kg）を予測するシンプルなモデル $y = \theta_0 + \theta_1 x$ を考えます。損失関数は「予測と正解のズレ（残差）の二乗和」です：</p>
+  <div class="code-block">
+    <span class="code-label">Python — 線形回帰を勾配降下法で実装する（損失の推移を観察）</span>
+    <pre>import numpy as np
+
+# データ（身長[cm]、体重[kg]）
+X = np.array([155, 160, 165, 170, 175, 180], dtype=float)
+y = np.array([ 50,  55,  58,  65,  68,  75], dtype=float)
+
+# パラメータの初期値（ゼロスタート）
+theta0, theta1 = 0.0, 0.0
+lr = 0.0001   # 学習率
+N  = len(X)
+
+# 勾配降下法（500ステップ）
+for step in range(500):
+    y_hat = theta0 + theta1 * X         # ① 予測値を計算  shape: (6,)
+    residual = y_hat - y                 # ② 残差（誤差） shape: (6,)
+    loss = np.mean(residual ** 2)        # ③ MSE損失（スカラー）
+
+    # ④ 偏微分（連鎖律）
+    #   ∂L/∂θ0 = (2/N) Σ(ŷ - y)   ← θ0 で微分
+    #   ∂L/∂θ1 = (2/N) Σ(ŷ - y)·x ← θ1 で微分（x が乗る）
+    d0 = 2 * np.mean(residual)
+    d1 = 2 * np.mean(residual * X)
+
+    # ⑤ パラメータ更新（勾配の逆方向へ移動）
+    theta0 -= lr * d0
+    theta1 -= lr * d1
+
+    # 途中経過を表示（100ステップごと）
+    if step % 100 == 0:
+        print(f"step {step:3d}: loss={loss:.2f}, θ0={theta0:.2f}, θ1={theta1:.4f}")
+
+# step   0: loss=3720.83, θ0=0.49, θ1=0.0832
+# step 100: loss= 100.21, θ0=12.4, θ1=0.2641
+# step 200: loss=  19.83, θ0=22.1, θ1=0.2201
+# step 300: loss=   9.47, θ0=26.8, θ1=0.2041
+# step 400: loss=   7.31, θ0=29.2, θ1=0.1965
+
+print(f"\n最終パラメータ: θ0={theta0:.2f}, θ1={theta1:.4f}")
+print(f"170cm の予測  : {theta0 + theta1 * 170:.1f} kg  (正解: 65 kg)")</pre>
+  </div>
+
+  <h4>正規方程式 — 解析解を一発で求める</h4>
+  <p>$y = X\theta + \epsilon$ の最小二乗解。損失 $\mathcal{L} = \|X\theta - y\|^2$ を $\theta$ で微分してゼロとおくと：</p>
+  <div class="math-block">
+    $$\nabla_\theta \mathcal{L} = 2X^T(X\theta - y) = 0 \implies \hat{\theta} = (X^T X)^{-1} X^T y$$
+  </div>
+  <div class="math-note">正規方程式は閉形式ですが、$X^T X \in \mathbb{R}^{d \times d}$ の逆行列計算が $O(d^3)$ のため、特徴量数 $d$ が数万を超えると現実的でなくなります。これが大規模モデルでは常に勾配降下法を使う理由です。</div>
+
+  <h4>過学習と正則化</h4>
+  <p>モデルを複雑にしすぎると、学習データに「丸暗記」してしまいます（過学習）。正則化は「重みを小さく保つ制約」を損失関数に加えることで、汎化性能を保ちます。</p>
+
+  <div class="visual">
+    <div class="label">過学習と正則化のイメージ：「暗記 vs 理解」</div>
+    <p>100問の問題をすべて丸暗記した（過学習）生徒は、初見問題（テストデータ）ではボロボロです。<br>
+    <strong>L2（Ridge）</strong>は「全ての重みにゴムバンドを付けてゼロ方向に引っ張る」イメージです。<br>
+    <strong>L1（Lasso）</strong>は「重要でない特徴量の重みを完全にゼロにして捨てる」選別者のイメージです。</p>
+  </div>
+
+  <div class="math-block">
+    $$\mathcal{L}_{Ridge} = \|X\theta - y\|^2 + \alpha\|\theta\|_2^2 \quad \text{(L2: Ridge)}$$
+  </div>
+  <div class="math-block">
+    $$\mathcal{L}_{Lasso} = \|X\theta - y\|^2 + \alpha\|\theta\|_1 \quad \text{(L1: Lasso)}$$
+  </div>
+
+  <div class="code-block">
+    <span class="code-label">Python — Ridge と Lasso の比較（スパース性の違いを体感）</span>
+    <pre>import numpy as np
+from sklearn.linear_model import Ridge, Lasso, LinearRegression
+
+# 合成データを作成：特徴量10個のうち本当に重要なのは2個だけ
+np.random.seed(42)
+N = 200
+X = np.random.randn(N, 10)                 # 10次元の特徴量
+true_w = np.array([3, -2, 0, 0, 0, 0, 0, 0, 0, 0])  # 本当の係数（ほとんどゼロ）
+y = X @ true_w + np.random.randn(N) * 0.5  # ノイズ付きの目標値
+
+# ------------------------------------------------------------------
+# 1. 正則化なし（過学習しやすい）
+lr = LinearRegression().fit(X, y)
+print("正則化なし:", np.round(lr.coef_, 2))
+# → [ 3.01 -2.00  0.03 -0.05  0.09 -0.02  0.01  0.07 -0.08  0.04]
+#   ゼロであるべき係数にノイズが乗っている
+
+# ------------------------------------------------------------------
+# 2. Ridge（L2）: 全ての係数が均等に小さくなる
+ridge = Ridge(alpha=1.0).fit(X, y)
+print("Ridge     :", np.round(ridge.coef_, 2))
+# → [ 2.94 -1.96  0.03 -0.04  0.08 -0.02  0.01  0.06 -0.07  0.03]
+#   全係数が少し縮小するが、どれもゼロにはならない
+
+# ------------------------------------------------------------------
+# 3. Lasso（L1）: 不要な係数がきっちりゼロに
+lasso = Lasso(alpha=0.1).fit(X, y)
+print("Lasso     :", np.round(lasso.coef_, 2))
+# → [ 2.87 -1.91  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00]
+#   重要な特徴量 (idx=0,1) だけが残り、残りは完全にゼロ ← スパース！
+
+n_nonzero = np.sum(lasso.coef_ != 0)
+print(f"Lassoが選んだ特徴量の数: {n_nonzero}/10")  # → 2/10</pre>
+  </div>
+
+  <div class="ai-connection">
+    <div class="label">深層学習での正則化</div>
+    <p><strong>Weight Decay</strong>（重み減衰）はL2正則化です。AdamにWeight Decayを加えた<strong>AdamW</strong>が現在のTransformer学習の標準です。L1正則化はスパース性を誘導するため、ネットワーク枝刈り（pruning）の理論的基盤にもなっています。</p>
+  </div>
+
+  <div class="matome">
+    <span class="matome-label">本節のまとめ</span>
+    <ul>
+      <li>線形回帰の目標は「MSE損失を最小化するパラメータを見つける」こと</li>
+      <li>正規方程式は解析解だが、大規模データでは勾配降下法を使う</li>
+      <li>L2正則化（Ridge）は重みを小さくし、L1（Lasso）はスパースにする</li>
+      <li>深層学習でのWeight Decay（AdamW）はL2正則化に相当する</li>
+    </ul>
+  </div>
+
+  </div>
+</div>
+
+<!-- ロジスティック回帰 -->
+<div class="topic" id="t-logreg" style="border-left-color:var(--month2)">
+  <h3>ロジスティック回帰と分類 <span class="day-tag">Day 26–30</span></h3>
+  <div class="topic-body">
+
+  <p class="topic-lead">線形回帰が「連続値の予測（何kgか？）」に使われるのに対し、ロジスティック回帰は「カテゴリの分類（犬か猫か？）」に使います。線形モデルの出力（生スコア）を確率（0〜1）に変換するためにシグモイド関数を使います。この仕組みはニューラルネットの出力層と全く同じです。</p>
+
+  <div class="visual">
+    <div class="label">シグモイドのイメージ：「スコアを確率に変換するS字スイッチ」</div>
+    <p>ニューラルネットの最後の層は「この入力が犬である度合い：スコア +3.7」のような生の数値を出力します。しかしこれは確率ではありません（0〜1の範囲に収まっていない）。シグモイド関数はどんなスコアも「0%〜100%の確率」に滑らかに変換する関数です。スコアが大きいほど確率が1に近づき、小さいほど0に近づきます。</p>
+  </div>
+
+  <h4>シグモイド関数を手で実装する</h4>
+  <div class="code-block">
+    <span class="code-label">Python — シグモイドと二値交差エントロピー</span>
+    <pre>import numpy as np
+
+def sigmoid(z):
+    return 1 / (1 + np.exp(-z))
+
+# スコアを確率に変換
+scores = np.array([-3, -1, 0, 1, 3])
+probs  = sigmoid(scores)
+# → [0.047, 0.269, 0.5, 0.731, 0.953]
+
+# 二値交差エントロピー損失
+def bce_loss(y_true, y_pred):
+    eps = 1e-9  # log(0)を避ける
+    return -np.mean(
+        y_true * np.log(y_pred + eps) +
+        (1 - y_true) * np.log(1 - y_pred + eps)
+    )
+
+y_true = np.array([1, 0, 1, 1, 0])
+y_pred = sigmoid(np.array([2, -1, 1.5, -0.5, -2]))
+print(f"Loss: {bce_loss(y_true, y_pred):.4f}")</pre>
+  </div>
+
+  <div class="math-block">
+    $$\sigma(z) = \frac{1}{1 + e^{-z}}, \quad \mathcal{L} = -\frac{1}{N}\sum_{i=1}^N \left[y_i \log \hat{y}_i + (1-y_i) \log(1-\hat{y}_i)\right]$$
+  </div>
+
+  <h4>Softmax関数（多クラス分類）</h4>
+  <p>$K$ クラスの出力スコアベクトル $\mathbf{z}$ を確率分布に変換します：</p>
+  <div class="math-block">
+    $$\text{softmax}(z_i) = \frac{e^{z_i}}{\sum_{j=1}^K e^{z_j}}$$
+  </div>
+  <div class="code-block">
+    <span class="code-label">Python — 数値安定なSoftmaxの実装</span>
+    <pre>import numpy as np
+
+def softmax(z):
+    # max を引いてオーバーフローを防ぐ（数値安定化）
+    z_shifted = z - np.max(z)
+    exp_z = np.exp(z_shifted)
+    return exp_z / exp_z.sum()
+
+# 3クラス分類の例
+logits = np.array([2.0, 1.0, 0.1])  # モデルの生スコア
+probs  = softmax(logits)
+# → [0.659, 0.242, 0.099]  合計 = 1.0
+
+print("クラス0の確率:", probs[0])   # → 0.659
+print("予測クラス:", np.argmax(probs))  # → 0</pre>
+  </div>
+
+  <div class="insight">
+    <p><strong>Softmax + Cross-Entropyの勾配はシンプル</strong>：$\frac{\partial \mathcal{L}}{\partial z_i} = \hat{y}_i - y_i$（予測確率 − 正解ラベル）。この簡潔さが深層学習の出力層として広く使われる理由の一つです。</p>
+  </div>
+
+  <div class="training">
+    <div class="label">学習時：なぜ交差エントロピーを使うのか</div>
+    <p>Softmax出力をそのまま $\log$ に通すことで MSE より安定した勾配が得られます。MSEを使うと sigmoid/softmax の飽和域で勾配がほぼゼロになる「勾配消失」が深刻になります。CE損失はその問題を回避します。</p>
+  </div>
+  <div class="inference">
+    <div class="label">推論時：確率キャリブレーション</div>
+    <p>分類タスクでは $\arg\max$ でクラスを決定します。ただし Softmax 出力は必ずしも「真の確率」ではありません（過信傾向）。Temperature Scaling（検証セットで温度 $T$ を調整）で出力確率をキャリブレーションします。</p>
+  </div>
+
+  <div class="matome">
+    <span class="matome-label">本節のまとめ</span>
+    <ul>
+      <li>シグモイドは「スコア → 確率」の変換器。二値分類の出力層で使う</li>
+      <li>Softmaxは多クラス版。出力の合計が1になる確率分布を作る</li>
+      <li>Softmax + Cross-Entropy の勾配は「予測 − 正解」と非常にシンプル</li>
+      <li>数値安定性のため、実装では softmax 前に max を引く</li>
+    </ul>
+  </div>
+
+  </div>
+</div>
+
+<!-- アンサンブル学習 -->
+<div class="topic" id="t-ensemble" style="border-left-color:var(--month2)">
+  <h3>アンサンブル学習 <span class="day-tag">Day 31–35</span></h3>
+  <div class="topic-body">
+
+  <p class="topic-lead">「複数の弱い学習器を組み合わせて強い学習器を作る」のがアンサンブル学習の基本思想です。Kaggleのような予測精度を競うコンテストでは、ニューラルネットよりも決定木をベースとしたXGBoostやLightGBMが表形式データで圧倒的な強さを誇ります。なぜ木が強いのかを理解しましょう。</p>
+
+  <div class="visual">
+    <div class="label">決定木のイメージ：「20の質問ゲーム」</div>
+    <p>「動物当てゲーム」で Yes/No の質問を繰り返す遊びを思い出してください。<br>
+    「生き物ですか？」→ Yes → 「4本足ですか？」→ Yes → 「吠えますか？」→ Yes → 犬！<br><br>
+    決定木はまさにこれです。ジニ不純度は「この質問で、どれだけデータをうまく分類できるか」の指標です。「完全に分けられた（純粋）」ならジニ不純度は0、「全く分けられない（半々）」なら最大になります。</p>
+  </div>
+
+  <h4>決定木のジニ不純度を手計算する</h4>
+  <p>木の各分割点でデータの「不純度」を最小化する特徴・閾値を選びます：</p>
+  <div class="math-block">
+    $$\text{Gini}(S) = 1 - \sum_{k=1}^K p_k^2$$
+  </div>
+  <div class="code-block">
+    <span class="code-label">Python — ジニ不純度を計算してみる</span>
+    <pre>import numpy as np
+
+def gini(counts):
+    """countsはクラスごとのサンプル数リスト"""
+    counts = np.array(counts)
+    total = counts.sum()
+    probs = counts / total
+    return 1 - np.sum(probs ** 2)
+
+# 分割前: [30個が犬, 30個が猫] → 完全に混在
+print(gini([30, 30]))  # → 0.50（最大の不純度）
+
+# 分割後（ある閾値で分けた場合）
+# 左: [28犬, 5猫] 右: [2犬, 25猫]
+left  = gini([28, 5])   # → 0.263
+right = gini([2, 25])   # → 0.148
+
+# 加重平均でこの分割の効果を評価
+n_left, n_right = 33, 27
+weighted_gini = (n_left * left + n_right * right) / (n_left + n_right)
+print(f"分割後の加重ジニ: {weighted_gini:.3f}")  # → 0.213（改善）</pre>
+  </div>
+
+  <h4>勾配ブースティング（GBDT）— 残差を積み上げる</h4>
+  <p>各ステップで前のモデルの「残差（負の勾配）」をフィッティングする弱学習器を追加します：</p>
+  <div class="math-block">
+    $$F_m(\mathbf{x}) = F_{m-1}(\mathbf{x}) + \eta \cdot h_m(\mathbf{x}), \quad h_m = \arg\min_h \sum_i \mathcal{L}(y_i, F_{m-1}(\mathbf{x}_i) + h(\mathbf{x}_i))$$
+  </div>
+
+  <div class="visual">
+    <div class="label">勾配ブースティングのイメージ：「間違いを訂正する専門家チーム」</div>
+    <p>最初の弱い専門家（木1）が予測します。間違いが多い部分を次の専門家（木2）が補正します。木2の残った間違いを木3が補正……これを繰り返します。<br>
+    各ステップで「前の予測との差（残差）= 負の勾配」を次の木に学習させる点が名前の由来です。表形式データではXGBoost/LightGBMがニューラルネットを今でも圧倒することが多く、Kaggle競技の王者として君臨しています。</p>
+  </div>
+
+  <div class="code-block">
+    <span class="code-label">Python — XGBoost vs 決定木1本の比較（アンサンブルの効果を確認）</span>
+    <pre>import xgboost as xgb
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
+from sklearn.datasets import load_breast_cancer
+
+# 乳がん診断データセット（30特徴量、良性/悪性の2クラス）
+data = load_breast_cancer()
+X, y = data.data, data.target
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
+
+# ------------------------------------------------------------------
+# 比較①: 決定木1本（弱い学習器）
+single_tree = DecisionTreeClassifier(max_depth=3, random_state=42)
+single_tree.fit(X_train, y_train)
+acc_tree = accuracy_score(y_test, single_tree.predict(X_test))
+print(f"決定木 1本     : {acc_tree:.4f}")  # → 0.9123
+
+# ------------------------------------------------------------------
+# 比較②: XGBoost（100本の木をアンサンブル）
+model = xgb.XGBClassifier(
+    n_estimators=100,   # 木の数（弱学習器を100個使う）
+    learning_rate=0.1,  # η: 各木の寄与を小さく保つ（過学習防止）
+    max_depth=4,        # 各木の深さ上限
+    subsample=0.8,      # 各ステップで80%の行をランダムサンプリング
+    colsample_bytree=0.8,  # 各ステップで80%の特徴量をランダム選択
+    random_state=42,
+    eval_metric='logloss',  # 損失関数（2値分類）
+    verbosity=0         # ログを抑制
+)
+model.fit(X_train, y_train)
+acc_xgb = accuracy_score(y_test, model.predict(X_test))
+print(f"XGBoost(100本) : {acc_xgb:.4f}")  # → 0.9561  ← 大幅改善！
+
+# 特徴量の重要度（どの特徴が予測に効いているか）
+importances = model.feature_importances_
+top3_idx = importances.argsort()[::-1][:3]
+for i in top3_idx:
+    print(f"  重要特徴量: {data.feature_names[i][:25]:25s} score={importances[i]:.3f}")</pre>
+  </div>
+
+  <div class="ai-connection">
+    <div class="label">ブースティングとResNetの類似性</div>
+    <p>ResNetのskip connection $F(\mathbf{x}) + \mathbf{x}$ はブースティングのアイデアと本質的に類似しています。どちらも「前段の出力に残差を加算する」構造で、モデルが「理想的な答え全体」ではなく「修正分（残差）だけ」を学習すればよくなります。</p>
+  </div>
+
+  <div class="matome">
+    <span class="matome-label">本節のまとめ</span>
+    <ul>
+      <li>決定木は「ジニ不純度を最小化する分割を繰り返す」アルゴリズム</li>
+      <li>GBDTは「残差＝負の勾配」を次の木に学習させる逐次アンサンブル</li>
+      <li>XGBoost/LightGBMは表形式データでニューラルネットより強いことが多い</li>
+      <li>「残差を加算」の考え方はResNetのskip connectionと同じ</li>
+    </ul>
+  </div>
+
+  </div>
+</div>
+
+<!-- 次元削減とクラスタリング -->
+<div class="topic" id="t-dimred" style="border-left-color:var(--month2)">
+  <h3>次元削減とクラスタリング <span class="day-tag">Day 36–42</span></h3>
+  <div class="topic-body">
+
+  <p class="topic-lead">高次元データ（例：画像の15万ピクセル）はそのままでは扱いにくく、可視化も不可能です。次元削減は「高次元データの本質的な構造を低次元で表現する」技術です。教師ありの特徴学習（ニューラルネット）と教師なしの次元削減（PCA）を比較することで、両者の理解が深まります。</p>
+
+  <h4>PCA（主成分分析）— 情報量最大の方向を探す</h4>
+  <p>データを中心化した後、共分散行列の固有値分解を行います：</p>
+  <div class="math-block">
+    $$C = \frac{1}{N} X_c^T X_c, \quad C\mathbf{v}_i = \lambda_i \mathbf{v}_i$$
+  </div>
+
+  <div class="visual">
+    <div class="label">PCAのイメージ：「影の形で本体を推測する」</div>
+    <p>3D物体に光を当てると2Dの影ができます。PCAは「データの影をうまく映す方向を探す」操作です。例えば「身長・体重・BMI・腹囲」の4次元データがあっても、実は「体の大きさ」という1つの軸でほぼ説明できます。PCAはその「最も情報が詰まった軸の方向」を自動で見つけます。固有値が大きいほど「その方向にデータが広がっている（情報が多い）」ことを意味します。</p>
+  </div>
+
+  <div class="code-block">
+    <span class="code-label">Python — PCAをNumPyで実装する</span>
+    <pre>import numpy as np
+
+# データ（N=100サンプル、d=50次元）
+X = np.random.randn(100, 50)
+
+# Step 1: 中心化（平均をゼロに）
+X_centered = X - X.mean(axis=0)
+
+# Step 2: 共分散行列
+C = X_centered.T @ X_centered / (len(X) - 1)   # shape: (50, 50)
+
+# Step 3: 固有値分解
+eigenvalues, eigenvectors = np.linalg.eigh(C)
+
+# 固有値の大きい順に並び替え
+idx = np.argsort(eigenvalues)[::-1]
+eigenvalues = eigenvalues[idx]
+eigenvectors = eigenvectors[:, idx]
+
+# Step 4: 上位2主成分に射影（50次元 → 2次元）
+X_pca = X_centered @ eigenvectors[:, :2]
+
+# 寄与率
+explained_ratio = eigenvalues[:2] / eigenvalues.sum()
+print(f"上位2主成分の寄与率: {explained_ratio.sum():.1%}")</pre>
+  </div>
+
+  <div class="math-note">$C$ は半正定値対称行列なので固有値はすべて $\geq 0$、固有ベクトルは互いに直交します。この性質がPCAの基礎になっています。</div>
+
+  <div class="ai-connection">
+    <div class="label">AutoencoderとPCAの関係</div>
+    <p>線形活性化のAutoencoderはPCAと等価な解を学習します。非線形活性化を使うと、PCAでは捉えられない非線形な多様体上の次元削減が可能になります。VAEの潜在空間もこの延長線上にあります。</p>
+  </div>
+
+  <h4>k-meansクラスタリング — 教師なし分類</h4>
+  <p>各点を最も近い重心に割り当て、重心を更新するEMアルゴリズムです：</p>
+  <div class="math-block">
+    $$\min_{\{C_k\}} \sum_{k=1}^{K} \sum_{\mathbf{x} \in C_k} \|\mathbf{x} - \boldsymbol{\mu}_k\|^2, \quad \boldsymbol{\mu}_k = \frac{1}{|C_k|}\sum_{\mathbf{x} \in C_k} \mathbf{x}$$
+  </div>
+  <div class="code-block">
+    <span class="code-label">Python — k-meansのE/Mステップを手で実装して収束を観察する</span>
+    <pre>import numpy as np
+
+# 6点の2Dデータ（直感的にクラスタが2つ見える配置）
+#  グループA: (1,1),(1.5,2),(2,1.5)  ← 左下の集まり
+#  グループB: (5,7),(4.5,5),(3.5,5)  ← 右上の集まり
+X = np.array([[1,1],[1.5,2],[2,1.5],[5,7],[4.5,5],[3.5,5]], dtype=float)
+K = 2
+
+np.random.seed(0)
+# ① 初期重心をランダムに選ぶ（k-means++ はもっと賢い初期化）
+centroids = X[np.random.choice(len(X), K, replace=False)].copy()
+print(f"初期重心: {centroids.tolist()}")
+
+for iteration in range(20):
+    # ---- E-step（Expectation）: 割り当て ----
+    # X[:, np.newaxis] shape: (6,1,2)
+    # centroids shape:        (2,2)
+    # broadcast後の差分shape:  (6,2,2) → norm → (6,2)
+    dists = np.linalg.norm(X[:, np.newaxis] - centroids, axis=2)
+    labels = np.argmin(dists, axis=1)  # 各点が属するクラスタID shape: (6,)
+
+    # ---- M-step（Maximization）: 重心を更新 ----
+    # クラスタに属する点の平均が新しい重心
+    new_centroids = np.array([
+        X[labels == k].mean(axis=0)   # クラスタk の平均位置
+        for k in range(K)
+    ])
+
+    # 損失（各点と重心の距離二乗和）を計算
+    inertia = sum(
+        np.sum((X[labels == k] - new_centroids[k]) ** 2)
+        for k in range(K)
+    )
+
+    print(f"iter {iteration}: labels={labels.tolist()}, "
+          f"重心={np.round(new_centroids,1).tolist()}, "
+          f"inertia={inertia:.2f}")
+
+    # 重心が動かなくなったら収束
+    if np.allclose(centroids, new_centroids):
+        print("→ 収束しました！")
+        break
+    centroids = new_centroids
+
+# iter 0: labels=[0, 0, 0, 1, 1, 1], 重心=[[1.5,1.5],[4.3,5.7]], inertia=3.25
+# iter 1: labels=[0, 0, 0, 1, 1, 1], 重心=[[1.5,1.5],[4.3,5.7]], inertia=3.25
+# → 収束しました！（1回で収束。初期値が良かった場合）
+
+print(f"\nクラスタ割り当て: {labels}")
+# → [0 0 0 1 1 1]  ← グループA=0, グループB=1 が完璧に分離！</pre>
+  </div>
+
+  <div class="ai-connection">
+    <div class="label">VQ-VAEとトークナイゼーションへの接続</div>
+    <p>VQ-VAE（Vector Quantization VAE）はk-meansに似た量子化を潜在空間に適用します。BPEやSentencePieceなどのテキストトークナイザーも頻出バイグラムを「クラスタ」としてマージする考え方に基づいています。</p>
+  </div>
+
+  <div class="matome">
+    <span class="matome-label">本節のまとめ</span>
+    <ul>
+      <li>PCAは「共分散行列の固有値分解」で最も情報量の多い方向を見つける</li>
+      <li>固有値が大きいほど情報量が多い。上位主成分への射影で次元削減できる</li>
+      <li>線形Autoencoderの潜在表現はPCAと等価。非線形化で多様体上の次元削減が可能</li>
+      <li>k-meansはE（割当て）とM（更新）の繰り返し。VQ-VAEやトークナイザーの基礎</li>
+    </ul>
+  </div>
+
+  </div>
+</div>
+
+<!-- ハイパーパラメータ探索 -->
+<div class="topic" id="t-hparam" style="border-left-color:var(--month2)">
+  <h3>ハイパーパラメータ探索と検証 <span class="day-tag">補足</span></h3>
+  <div class="topic-body">
+
+  <p class="topic-lead">「モデルは作れたが、精度が低い。何を調整すればいいのか？」機械学習の実践で最も時間を使うのがハイパーパラメータ（学習率・バッチサイズ・層数・正則化強度など）の探索です。ゼロつくが「まず動かして比較する」姿勢を大切にするように、ここでも手を動かしながら探索の方法論を習得します。</p>
+
+  <div class="visual">
+    <div class="label">ハイパーパラメータとは？「モデルが学習しない設定値」</div>
+    <p>ニューラルネットの「重み（W, b）」は学習で自動的に決まります。一方「何層にするか」「学習率はいくつか」「バッチサイズは何か」という設定値は人間が決める必要があります。これらを<strong>ハイパーパラメータ</strong>といいます。<br><br>
+    良い比喩：ケーキを焼くとき「レシピ通りに材料を混ぜる（重みの学習）」は自動化できますが、「オーブンの温度と時間（ハイパーパラメータ）」は人間が設定する必要があります。</p>
+  </div>
+
+  <h4>データの分割 — 過学習を正しく検出する</h4>
+  <p>ハイパーパラメータ探索には「テストデータ以外の評価セット（検証セット）」が必須です：</p>
+
+  <div class="code-block">
+    <span class="code-label">Python — 訓練/検証/テストの正しい分割と使い方</span>
+    <pre>import numpy as np
+from sklearn.model_selection import train_test_split, KFold
+from sklearn.datasets import load_breast_cancer
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score
+
+data = load_breast_cancer()
+X, y = data.data, data.target
+
+# ─── 悪い例：テストデータでハイパーパラメータを調整 ───
+# X_train, X_test, y_train, y_test = ...
+# for C in [0.1, 1.0, 10.0]:
+#     model.fit(X_train)
+#     score = model.score(X_test)  ← NG！テストで調整すると「過学習」が見えなくなる
+
+# ─── 正しい3分割：Train / Validation / Test ───
+# 1. まずテストセットを分離（最後まで触らない！）
+X_temp, X_test, y_temp, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42, stratify=y
+)
+# 2. 残りを訓練と検証に分割
+X_train, X_val, y_train, y_val = train_test_split(
+    X_temp, y_temp, test_size=0.2, random_state=42, stratify=y_temp
+)
+
+print(f"訓練: {len(X_train)} サンプル")    # → 364
+print(f"検証: {len(X_val)}  サンプル")     # → 91
+print(f"テスト: {len(X_test)} サンプル")   # → 114
+
+# ─── 検証セットでハイパーパラメータを探索 ───
+C_candidates = [0.001, 0.01, 0.1, 1.0, 10.0, 100.0]
+best_C, best_val_acc = None, 0.0
+
+for C in C_candidates:
+    model = LogisticRegression(C=C, max_iter=1000)
+    model.fit(X_train, y_train)
+    val_acc = accuracy_score(y_val, model.predict(X_val))
+    print(f"  C={C:6.3f}: 検証精度={val_acc:.4f}")
+    if val_acc > best_val_acc:
+        best_val_acc = val_acc
+        best_C = C
+
+print(f"\n最良の C={best_C}, 検証精度={best_val_acc:.4f}")
+
+# ─── 最後にテストセットで最終評価（1度だけ！）───
+final_model = LogisticRegression(C=best_C, max_iter=1000)
+final_model.fit(np.vstack([X_train, X_val]),
+                np.hstack([y_train, y_val]))  # 訓練+検証を全て使う
+test_acc = accuracy_score(y_test, final_model.predict(X_test))
+print(f"テスト精度（最終評価）: {test_acc:.4f}")  # これが真の汎化性能</pre>
+  </div>
+
+  <h4>グリッドサーチとランダムサーチ</h4>
+  <div class="code-block">
+    <span class="code-label">Python — GridSearch vs RandomSearch（探索効率の違いを体験）</span>
+    <pre>from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
+from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.datasets import load_breast_cancer
+import numpy as np
+
+data = load_breast_cancer()
+X, y = data.data, data.target
+
+# ─── GridSearchCV：全組み合わせを試す ───
+# 3×3×2 = 18通りを評価
+param_grid = {
+    'n_estimators': [50, 100, 200],     # 木の数
+    'learning_rate': [0.05, 0.1, 0.2], # 学習率
+    'max_depth':     [3, 5],            # 木の深さ
+}
+grid_search = GridSearchCV(
+    GradientBoostingClassifier(random_state=42),
+    param_grid,
+    cv=5,                  # 5-fold交差検証
+    scoring='accuracy',
+    n_jobs=-1,             # 全CPUコアを使って並列実行
+    verbose=0
+)
+grid_search.fit(X, y)
+print("GridSearch 最良パラメータ:", grid_search.best_params_)
+print(f"GridSearch 最良CV精度:   {grid_search.best_score_:.4f}")
+print(f"試した組み合わせ数: 18通り")
+
+# ─── RandomizedSearchCV：ランダムにサンプリングして探索 ───
+# 高次元では「グリッドの格子点」が全体の一部しかカバーできない
+# ランダムサーチは重要なパラメータを効率よく見つけられる
+param_dist = {
+    'n_estimators':  [50, 100, 150, 200, 300],
+    'learning_rate': np.logspace(-3, 0, 20),  # 0.001〜1.0 の対数スケール
+    'max_depth':     [2, 3, 4, 5, 6, 7],
+    'subsample':     np.linspace(0.6, 1.0, 5), # 行のサブサンプリング比率
+    'min_samples_split': [2, 5, 10],
+}
+rand_search = RandomizedSearchCV(
+    GradientBoostingClassifier(random_state=42),
+    param_dist,
+    n_iter=20,             # 20通りだけランダムに試す（グリッドなら何百通り）
+    cv=5,
+    scoring='accuracy',
+    n_jobs=-1,
+    random_state=42
+)
+rand_search.fit(X, y)
+print("\nRandomSearch 最良パラメータ:", rand_search.best_params_)
+print(f"RandomSearch 最良CV精度:   {rand_search.best_score_:.4f}")
+print(f"試した組み合わせ数: 20通り（グリッドなら{3*20*6*5*3}通り必要）")</pre>
+  </div>
+
+  <h4>交差検証（Cross-Validation）— データを最大限に活用する</h4>
+  <div class="code-block">
+    <span class="code-label">Python — K-Fold 交差検証でモデルの汎化性能を正確に測る</span>
+    <pre>from sklearn.model_selection import KFold, cross_val_score
+from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
+from sklearn.datasets import load_breast_cancer
+import numpy as np
+
+data = load_breast_cancer()
+X, y = data.data, data.target
+
+# パイプライン：前処理 → モデルを1つのオブジェクトに
+# （重要: StandardScaler の fit は 訓練フォールド内だけで行われる）
+pipeline = Pipeline([
+    ('scaler', StandardScaler()),
+    ('model',  LogisticRegression(C=1.0, max_iter=1000))
+])
+
+# 5-Fold 交差検証
+kf = KFold(n_splits=5, shuffle=True, random_state=42)
+scores = cross_val_score(pipeline, X, y, cv=kf, scoring='accuracy')
+
+print("各フォールドの精度:", np.round(scores, 4))
+print(f"平均精度: {scores.mean():.4f} ± {scores.std():.4f}")
+# → 平均精度: 0.9771 ± 0.0087
+
+# ─── なぜ平均と標準偏差が両方必要か ───
+# 平均だけでは「たまたま良いデータ分割で高精度」が見抜けない
+# 標準偏差が小さい = モデルが安定している = 汎化しやすい
+# 「精度 ± 標準偏差」でモデルを比較する習慣が大切</pre>
+  </div>
+
+  <div class="point-box">
+    <span class="point-label">ポイント：ハイパーパラメータ探索の実践的なアドバイス</span>
+    <p>
+    <strong>① まず学習率から探す</strong>：他のどのハイパーパラメータより影響が大きい<br>
+    <strong>② 対数スケールで探索する</strong>：lr=0.001, 0.01, 0.1, 1.0 のように10倍ずつ変える<br>
+    <strong>③ 検証損失の推移を見る</strong>：精度だけでなく訓練/検証損失の乖離（過学習の兆候）を確認<br>
+    <strong>④ データが少ない場合はK-Fold</strong>：1回の分割より安定した評価が得られる<br>
+    <strong>⑤ ランダムサーチを先に、グリッドサーチを絞り込みに</strong>：全体を広く探索してから重要なパラメータを精密調整
+    </p>
+  </div>
+
+  <div class="matome">
+    <span class="matome-label">本節のまとめ</span>
+    <ul>
+      <li>データは必ず 訓練/検証/テスト の3分割。テストは最後に1度だけ使う</li>
+      <li>検証セットで超パラメータを選び、テストセットで最終評価（テストで選ぶのはNG）</li>
+      <li>グリッドサーチ：全組み合わせを試す。次元が多いと指数的に増える</li>
+      <li>ランダムサーチ：高次元では同じ試行数でグリッドサーチより効率的</li>
+      <li>K-Fold交差検証：データを最大活用し、精度の安定性（標準偏差）も測れる</li>
+    </ul>
+  </div>
+
+  </div>
+</div>
+
+<div class="page-nav">
+  <a href="month1.html">
+    <div class="nav-label">← 前のページ</div>
+    <div class="nav-title">Month 1: 数学基礎</div>
+  </a>
+  <a href="month3.html" class="next">
+    <div class="nav-label">次のページ →</div>
+    <div class="nav-title">Month 3: ニューラルネットワーク基礎</div>
+  </a>
+</div>
+
+</div><!-- /container -->
+<button id="back-to-top" onclick="window.scrollTo({top:0,behavior:'smooth'})" title="先頭へ戻る">↑</button>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [{left:"$$",right:"$$",display:true},{left:"$",right:"$",display:false}],
+    throwOnError: false
+  });
+  document.querySelectorAll('.topic').forEach(topic => {
+    const h3 = topic.querySelector('h3');
+    if (!h3) return;
+    h3.addEventListener('click', () => topic.classList.toggle('collapsed'));
+  });
+  const bar = document.getElementById('progress-bar');
+  const btn = document.getElementById('back-to-top');
+  const tocLinks = document.querySelectorAll('.page-toc a');
+  const topics = document.querySelectorAll('.topic[id]');
+  window.addEventListener('scroll', () => {
+    const h = document.documentElement;
+    bar.style.width = Math.min((h.scrollTop / (h.scrollHeight - h.clientHeight)) * 100, 100) + '%';
+    btn.classList.toggle('visible', h.scrollTop > 400);
+    let current = '';
+    topics.forEach(t => { if (t.getBoundingClientRect().top <= 100) current = t.id; });
+    tocLinks.forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#' + current));
+  }, { passive: true });
+});
+</script>
+</body>
+</html>

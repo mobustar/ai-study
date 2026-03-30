@@ -1,0 +1,1874 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Month 6: 生成モデル・強化学習・NLP — AI学習参考資料</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
+<link rel="stylesheet" href="ai_math_style.css">
+</head>
+<body>
+<div id="progress-bar"></div>
+<div class="container">
+
+<nav class="site-nav">
+  <a href="index.html">🏠 ホーム</a>
+  <span class="sep">/</span>
+  <a href="month1.html">Month 1</a>
+  <span class="sep">/</span>
+  <a href="month2.html">Month 2</a>
+  <span class="sep">/</span>
+  <a href="month3.html">Month 3</a>
+  <span class="sep">/</span>
+  <a href="month4.html">Month 4</a>
+  <span class="sep">/</span>
+  <a href="month5.html">Month 5</a>
+  <span class="sep">/</span>
+  <a href="month6.html" class="current">Month 6</a>
+</nav>
+
+<div class="page-header">
+  <span class="month-badge" style="background:var(--month6);color:#fff;">MONTH 6</span>
+  <h1>生成モデル · 強化学習 · NLP</h1>
+</div>
+
+<div class="page-toc">
+  <h3>このページの内容</h3>
+  <a href="#t-vae">VAE — 変分オートエンコーダ（Day 103–107）</a>
+  <a href="#t-gan">GAN — 敵対的生成ネットワーク（Day 108–112）</a>
+  <a href="#t-diffusion">Diffusion Model（Day 112）</a>
+  <a href="#t-rl">強化学習（Day 113–117）</a>
+  <a href="#t-nlp">自然言語処理（Day 118–122）</a>
+  <a href="#t-finetune">LoRA / QLoRA — パラメータ効率的ファインチューニング</a>
+  <a href="#t-quant">量子化 — モデルを小さく・速く</a>
+  <a href="#t-rag">RAG — 検索拡張生成</a>
+  <a href="#t-multimodal">マルチモーダル — CLIP・Vision-Language Models</a>
+  <a href="#t-reasoning">Chain of Thought と推論モデル</a>
+</div>
+
+<!-- VAE -->
+<div class="topic" id="t-vae" style="border-left-color:var(--month6)">
+  <h3>VAE (変分オートエンコーダ) <span class="day-tag">Day 103–107</span></h3>
+  <div class="topic-body">
+
+  <p class="topic-lead">「新しいデータを生成する」モデルを作るにはどうすればよいでしょうか？単純なオートエンコーダ（AE）は入力を圧縮して再構成できますが、潜在空間が不連続なため「ランダムサンプリングして生成」することが難しいです。VAEは潜在変数を「確率分布」として表現することでこの問題を解決し、滑らかな潜在空間を実現します。</p>
+
+  <div class="visual">
+    <div class="label">VAE のイメージ：「言語に翻訳してから元に戻す機械」</div>
+    <p>VAEは「データ → 意味（潜在変数）→ データ」という圧縮・展開を学習します。手書き数字「8」を入力すると、エンコーダは「縦長？横長？太い？細い？傾いてる？」のような<strong>意味的な座標（約20次元）</strong>に圧縮します。デコーダはその座標から「8」を再生成します。<br><br>
+    潜在空間の座標Aと座標Bの中間点を取ると「AとBの中間の見た目」が生成されます（補間）。また座標を完全にランダムにサンプリングすれば新しい「それらしい8」が生成できます。</p>
+  </div>
+
+  <h4>ELBOを導出する</h4>
+  <p>データの対数尤度 $\log p(x)$ を直接最大化することは難しいため、その下界（ELBO）を最大化します。まず $\log p(x)$ を分解します：</p>
+  <div class="math-block">
+    $$\log p(x) \geq \underbrace{\mathbb{E}_{q(z|x)}[\log p(x|z)]}_{\text{再構成精度（再構成損失）}} - \underbrace{D_{KL}(q(z|x) \| p(z))}_{\text{正則化（潜在空間を標準正規に近づける）}}$$
+  </div>
+  <p>エンコーダ $q(z|x)$ は入力から潜在変数の分布 $\mathcal{N}(\mu, \sigma^2)$ を出力します。デコーダ $p(x|z)$ はサンプリングした $z$ から元のデータを復元します。</p>
+
+  <h4>再パラメータ化トリック — 「ランダム性を外に出す」</h4>
+  <div class="math-block">
+    $$z = \mu + \sigma \odot \epsilon, \quad \epsilon \sim \mathcal{N}(0, I)$$
+  </div>
+  <div class="ai-connection">
+    <div class="label">なぜ再パラメータ化が必要か</div>
+    <p>$z \sim \mathcal{N}(\mu, \sigma^2)$ からの「サンプリング」操作は微分不可能です。しかし $z = \mu + \sigma \odot \epsilon$ と書き換えると、$z$ は $\mu$ と $\sigma$ の決定論的な関数になり、通常の逆伝播が可能になります。ランダム性は外部変数 $\epsilon$ に「押し出す」のがこのトリックの本質です。</p>
+  </div>
+
+  <div class="code-block">
+    <span class="code-label">Python — VAE の完全実装（定義・学習・生成・補間）</span>
+    <pre>import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+
+class VAE(nn.Module):
+    """Variational Autoencoder (MNIST用: 784次元 → 潜在20次元 → 784次元)"""
+    def __init__(self, input_dim=784, latent_dim=20):
+        super().__init__()
+        # ─── エンコーダ: x → (μ, log_var) ───
+        # 入力画像を圧縮して、潜在分布のパラメータを出力する
+        self.encoder = nn.Sequential(
+            nn.Linear(input_dim, 400),
+            nn.ReLU()
+        )
+        # μ: 潜在分布の平均
+        self.fc_mu      = nn.Linear(400, latent_dim)
+        # log σ²: 潜在分布の分散の対数（分散=exp(log_var)は常に正になる）
+        self.fc_log_var = nn.Linear(400, latent_dim)
+
+        # ─── デコーダ: z → x_recon ───
+        # 潜在変数から元の画像を復元する
+        self.decoder = nn.Sequential(
+            nn.Linear(latent_dim, 400),
+            nn.ReLU(),
+            nn.Linear(400, input_dim),
+            nn.Sigmoid()   # 出力を[0,1]に変換（ピクセル値に対応）
+        )
+
+    def encode(self, x):
+        """入力を潜在分布のパラメータに変換"""
+        h = self.encoder(x)                  # (B, 784) → (B, 400)
+        mu      = self.fc_mu(h)              # (B, 400) → (B, 20) 平均
+        log_var = self.fc_log_var(h)         # (B, 400) → (B, 20) 対数分散
+        return mu, log_var
+
+    def reparameterize(self, mu, log_var):
+        """
+        再パラメータ化トリック: z = μ + σ × ε, ε ~ N(0,I)
+        ポイント: サンプリングを「外の ε」に押し出すことで
+                  z から μ, σ への勾配が流れるようになる
+        """
+        if self.training:
+            std = torch.exp(0.5 * log_var)   # σ = exp(log_var / 2)
+            eps = torch.randn_like(std)       # ε ~ N(0, I)
+            return mu + std * eps             # z ~ N(μ, σ²)
+        else:
+            return mu  # 推論時はノイズなし（μをそのまま使う）
+
+    def decode(self, z):
+        """潜在変数から画像を復元"""
+        return self.decoder(z)               # (B, 20) → (B, 784)
+
+    def forward(self, x):
+        mu, log_var = self.encode(x)
+        z = self.reparameterize(mu, log_var)
+        x_recon = self.decode(z)
+        return x_recon, mu, log_var
+
+def vae_loss(x, x_recon, mu, log_var, beta=1.0):
+    """
+    ELBO損失 = 再構成損失 + β × KL損失
+    beta=1: 標準VAE, beta>1: disentangled表現を促進(β-VAE)
+    """
+    # 再構成損失: 元画像と復元画像のBCE（pixel単位）
+    recon_loss = F.binary_cross_entropy(x_recon, x, reduction='sum')
+
+    # KL損失: q(z|x) = N(μ,σ²) と p(z) = N(0,I) の KLダイバージェンス
+    # 解析解: -0.5 × Σ(1 + log σ² - μ² - σ²)
+    kl_loss = -0.5 * torch.sum(1 + log_var - mu.pow(2) - log_var.exp())
+
+    return recon_loss + beta * kl_loss
+
+# ─── 学習ループ（1エポック分のサンプル）───
+vae = VAE(input_dim=784, latent_dim=20)
+optimizer = optim.Adam(vae.parameters(), lr=1e-3)
+
+for step in range(3):   # 実際はデータローダーで全データを繰り返す
+    x = torch.rand(32, 784)    # 仮：32枚のMNIST画像（0〜1に正規化済み）
+
+    x_recon, mu, log_var = vae(x)
+    loss = vae_loss(x, x_recon, mu, log_var)
+
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+    print(f"step {step}: loss={loss.item():.1f}")
+
+# ─── 新しい画像を生成（推論）───
+vae.eval()
+with torch.no_grad():
+    # N(0,I) からサンプリング → デコーダで生成
+    z_sample = torch.randn(4, 20)          # 4枚分のランダムな潜在変数
+    generated = vae.decode(z_sample)        # → (4, 784) ← 生成された画像！
+    print(f"生成画像 shape: {generated.shape}")
+
+    # 2枚の画像の中間を補間（潜在空間の滑らかさを確認）
+    img_a = torch.rand(1, 784)
+    img_b = torch.rand(1, 784)
+    mu_a, _ = vae.encode(img_a)
+    mu_b, _ = vae.encode(img_b)
+    # α を 0 → 1 に変化させて中間の画像を生成
+    for alpha in [0.0, 0.25, 0.5, 0.75, 1.0]:
+        z_interp = (1 - alpha) * mu_a + alpha * mu_b  # 線形補間
+        img = vae.decode(z_interp)
+        print(f"α={alpha:.2f}: 補間画像 mean={img.mean():.3f}")</pre>
+  </div>
+
+  <h4>KL項の解析解（正規分布の場合）</h4>
+  <div class="math-block">
+    $$D_{KL}(\mathcal{N}(\mu, \sigma^2) \| \mathcal{N}(0, 1)) = -\frac{1}{2}\sum_{j=1}^{J}(1 + \log\sigma_j^2 - \mu_j^2 - \sigma_j^2)$$
+  </div>
+  <div class="math-note">この式は解析的に計算できる（数値積分不要）ため、実装が非常に簡潔です。$\mu \to 0, \sigma \to 1$ のとき KL = 0（標準正規分布に一致）になります。</div>
+
+  <div class="training">
+    <div class="label">学習時</div>
+    <p>損失 = 再構成損失（例: MSEまたはBCE）+ $\beta \cdot D_{KL}$ 項。$\beta > 1$ に設定すると潜在空間の分離性が向上します（$\beta$-VAE）。エンコーダ・デコーダを同時にエンドツーエンドで学習します。</p>
+  </div>
+  <div class="inference">
+    <div class="label">推論時（生成）</div>
+    <p>$z \sim \mathcal{N}(0, I)$ からサンプリングしてデコーダに通すだけで新しいデータを生成できます。潜在空間での内挿（$z_1$ と $z_2$ の中点を取る）によりスムーズな変換が可能です。</p>
+  </div>
+
+  <div class="matome">
+    <span class="matome-label">本節のまとめ</span>
+    <ul>
+      <li>VAEは潜在変数を「点」でなく「分布（μ, σ²）」として表現することで滑らかな潜在空間を作る</li>
+      <li>ELBO = 再構成損失 + KL損失（正則化）の最大化が目標</li>
+      <li>再パラメータ化トリック：z = μ + σ×ε とすることでサンプリングを微分可能にする</li>
+      <li>学習後は z～N(0,I) からサンプリングするだけで新しいデータを生成できる</li>
+    </ul>
+  </div>
+
+  </div>
+</div>
+
+<!-- GAN -->
+<div class="topic" id="t-gan" style="border-left-color:var(--month6)">
+  <h3>GAN (敵対的生成ネットワーク) <span class="day-tag">Day 108–112</span></h3>
+  <div class="topic-body">
+
+  <p class="topic-lead">VAEは損失関数の設計が明確でしたが、再構成画像がぼやける傾向がありました。GANは全く異なるアプローチをとります。「本物と偽物を見分ける識別器」と「識別器を騙すような偽物を生成する生成器」を競わせることで、驚くほどリアルな画像を生成できます。ただし学習が不安定という大きな課題もあります。</p>
+
+  <div class="visual">
+    <div class="label">GAN のイメージ：「偽造師と探偵のゲーム」</div>
+    <p>Generator（生成器）は「完璧な偽札を作る偽造師」です。Discriminator（識別器）は「本物と偽物を見抜く探偵」です。<br><br>
+    ・探偵は「本物の1000円札」と「偽造師の作品」を区別するよう訓練される<br>
+    ・偽造師は「探偵を騙せる品質の偽札」を作れるよう訓練される<br>
+    ・これを繰り返すと偽造師の技術が限りなく向上し、最終的には探偵でさえ区別できなくなる（Nash均衡）</p>
+  </div>
+
+  <h4>ミニマックスゲームの目的関数</h4>
+  <div class="math-block">
+    $$\min_G \max_D \; \mathbb{E}_{\mathbf{x} \sim p_{data}}[\log D(\mathbf{x})] + \mathbb{E}_{\mathbf{z} \sim p_z}[\log(1 - D(G(\mathbf{z})))]$$
+  </div>
+  <p>Discriminatorは本物を1、偽物を0に分類しようとし（max）、Generatorは偽物を1と判定させようとします（min）。</p>
+  <div class="math-note">最適な Discriminator は $D^*(\mathbf{x}) = \frac{p_{data}(\mathbf{x})}{p_{data}(\mathbf{x}) + p_g(\mathbf{x})}$ となります。Nash均衡では $p_g = p_{data}$ のとき $D^*(\mathbf{x}) = \frac{1}{2}$（本物と偽物を区別できなくなる）です。</div>
+
+  <div class="code-block">
+    <span class="code-label">Python — GAN の定義から学習ループまで（MNIST用）</span>
+    <pre>import torch
+import torch.nn as nn
+import torch.optim as optim
+
+# ─── Generator: ノイズ z → 偽画像（784次元）───
+class Generator(nn.Module):
+    """ランダムなノイズから手書き数字のような画像を生成する"""
+    def __init__(self, latent_dim=100, output_dim=784):
+        super().__init__()
+        self.net = nn.Sequential(
+            # 100次元のノイズを徐々に拡張していく
+            nn.Linear(latent_dim, 256),
+            nn.LeakyReLU(0.2),          # GANでよく使われる活性化関数
+            nn.BatchNorm1d(256),
+            nn.Linear(256, 512),
+            nn.LeakyReLU(0.2),
+            nn.BatchNorm1d(512),
+            nn.Linear(512, output_dim),
+            nn.Tanh()                   # 出力を[-1, 1]に正規化（画像に合わせる）
+        )
+
+    def forward(self, z):
+        return self.net(z)              # (batch, latent) → (batch, 784)
+
+# ─── Discriminator: 画像 x → 本物確率（0〜1）───
+class Discriminator(nn.Module):
+    """画像が本物か偽物かを見分ける識別器"""
+    def __init__(self, input_dim=784):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(input_dim, 512),
+            nn.LeakyReLU(0.2),          # 勾配が完全にゼロにならないLeakyReLU
+            nn.Dropout(0.3),             # 過学習防止
+            nn.Linear(512, 256),
+            nn.LeakyReLU(0.2),
+            nn.Dropout(0.3),
+            nn.Linear(256, 1),
+            nn.Sigmoid()                 # 本物確率（0=偽物, 1=本物）
+        )
+
+    def forward(self, x):
+        return self.net(x)              # (batch, 784) → (batch, 1)
+
+# ─── モデルとオプティマイザの準備 ───
+G = Generator(latent_dim=100, output_dim=784)
+D = Discriminator(input_dim=784)
+
+# GAN でよく使われる設定: lr=2e-4, β1=0.5（Adam のデフォルトは0.9）
+opt_G = optim.Adam(G.parameters(), lr=2e-4, betas=(0.5, 0.999))
+opt_D = optim.Adam(D.parameters(), lr=2e-4, betas=(0.5, 0.999))
+
+criterion = nn.BCELoss()   # 二値交差エントロピー（本物/偽物の分類）
+
+# ─── 学習ループ（1エポック分のサンプル）───
+# 実際は dataloader からデータを受け取るが、ここでは仮データで説明
+for step in range(3):   # 実際は全データを繰り返す
+    B = 32   # バッチサイズ
+    real_batch = torch.randn(B, 784)  # 仮：本物データ（MNISTなら実際の画像）
+
+    ones  = torch.ones(B, 1)     # 本物ラベル = 1
+    zeros = torch.zeros(B, 1)    # 偽物ラベル = 0
+
+    # ━━━ Step 1: Discriminator を更新（D を賢くする）━━━
+    z    = torch.randn(B, 100)   # ランダムノイズ
+    fake = G(z).detach()         # ← detach()が重要！Gへの勾配を切断
+
+    # 本物画像に「1（本物）」、偽物画像に「0（偽物）」を予測させる
+    loss_real = criterion(D(real_batch), ones)
+    loss_fake = criterion(D(fake),       zeros)
+    loss_D    = (loss_real + loss_fake) / 2    # 両方の損失の平均
+
+    opt_D.zero_grad()
+    loss_D.backward()
+    opt_D.step()
+
+    # ━━━ Step 2: Generator を更新（G を賢くする）━━━
+    z = torch.randn(B, 100)
+    # Gの目標: Dが偽物を「本物（1）」と判定するよう騙す
+    loss_G = criterion(D(G(z)), ones)  # 偽物に「本物ラベル=1」で学習
+
+    opt_G.zero_grad()
+    loss_G.backward()            # ← detach() しないので G まで勾配が伝わる
+    opt_G.step()
+
+    print(f"step {step}: loss_D={loss_D.item():.4f}, loss_G={loss_G.item():.4f}")
+
+# 新しい画像を生成（推論）
+G.eval()
+with torch.no_grad():
+    z_sample = torch.randn(4, 100)   # 4枚生成
+    generated = G(z_sample)          # (4, 784) ← 偽画像！
+    print(f"生成画像 shape: {generated.shape}")</pre>
+  </div>
+
+  <div class="ai-connection">
+    <div class="label">GANの問題とWGAN</div>
+    <p>実際には学習が不安定で、<strong>Mode Collapse</strong>（特定のデータのみ生成するようになる多様性の喪失）が大きな問題です。<br>
+    <strong>WGAN</strong>：Jensen-Shannonダイバージェンスの代わりにWasserstein（Earth Mover）距離を使うことで勾配消失とMode Collapseを大幅に改善。Discriminatorを「Critic」として重みをクリップ（またはGradient Penalty）します。</p>
+  </div>
+
+  <div class="training">
+    <div class="label">学習時の注意点</div>
+    <p>GeneratorとDiscriminatorを交互に更新します。通常Discriminatorを先に数ステップ更新してからGeneratorを1ステップ更新します。学習率は非常に小さく（例: $2 \times 10^{-4}$）、バランスが崩れると片方が支配して学習崩壊します。</p>
+  </div>
+
+  <div class="matome">
+    <span class="matome-label">本節のまとめ</span>
+    <ul>
+      <li>GAN = Generator（偽造師）とDiscriminator（探偵）の競争によって学習する</li>
+      <li>Nash均衡では生成分布が真のデータ分布と一致し、識別確率が0.5になる</li>
+      <li>GとDを交互に更新。学習率・更新比率のバランスが崩れると学習崩壊する</li>
+      <li>Mode Collapse問題を解決するためWGANなどの改良手法が重要</li>
+    </ul>
+  </div>
+
+  </div>
+</div>
+
+<!-- Diffusion -->
+<div class="topic" id="t-diffusion" style="border-left-color:var(--month6)">
+  <h3>Diffusion Model <span class="day-tag">Day 112</span></h3>
+  <div class="topic-body">
+
+  <p class="topic-lead">GANは高品質な画像を生成できますが、学習が不安定です。Diffusion Modelは全く異なる発想で高品質生成を実現します。「画像にノイズを少しずつ加えて完全なノイズにする」プロセスを学習し、逆に「ノイズから画像を復元する」ことを学習します。DALL-E 2、Stable Diffusion、Midjourneyの基盤技術です。</p>
+
+  <div class="visual">
+    <div class="label">Diffusion Model のイメージ：「砂嵐からの逆フィルム」</div>
+    <p>きれいな写真（$\mathbf{x}_0$）に少しずつ「砂嵐（ノイズ）」を加え続けると、最終的には純粋なランダムノイズ（$\mathbf{x}_T$）になります（前方拡散：$T$ステップ）。<br><br>
+    Diffusion Modelは「この砂嵐が1ステップ前にどんな画像だったか」を予測することを学習します。これを繰り返し（逆拡散：$T$ → $0$）、最初の純粋なランダムノイズからきれいな画像を復元します。<br>
+    驚くべきことに「砂嵐の各ステップで何のノイズが加わったか」を予測するだけで、完璧な画像生成が可能になります。</p>
+  </div>
+
+  <h4>前方拡散過程（Forward Process）</h4>
+  <p>元画像 $\mathbf{x}_0$ に少しずつノイズを加えて純粋なガウスノイズに変換します：</p>
+  <div class="math-block">
+    $$q(\mathbf{x}_t | \mathbf{x}_{t-1}) = \mathcal{N}(\mathbf{x}_t; \sqrt{1-\beta_t}\mathbf{x}_{t-1}, \beta_t I)$$
+  </div>
+  <p>$\bar{\alpha}_t = \prod_{s=1}^t (1-\beta_s)$ とすると、任意のステップ $t$ のノイズを一撃で計算できます（閉形式）：</p>
+  <div class="math-block">
+    $$q(\mathbf{x}_t | \mathbf{x}_0) = \mathcal{N}(\mathbf{x}_t; \sqrt{\bar{\alpha}_t}\mathbf{x}_0, (1-\bar{\alpha}_t) I)$$
+  </div>
+
+  <h4>学習目的 — 「どのノイズが加わったか」を予測する</h4>
+  <div class="math-block">
+    $$\mathcal{L} = \mathbb{E}_{t, \mathbf{x}_0, \epsilon}\left[\|\epsilon - \epsilon_\theta(\mathbf{x}_t, t)\|^2\right]$$
+  </div>
+
+  <div class="code-block">
+    <span class="code-label">Python — Diffusion Model の前方拡散・学習・逆拡散を段階的に実装</span>
+    <pre>import torch
+import torch.nn as nn
+import numpy as np
+
+# ─── ノイズスケジュールの設定 ───
+T = 1000   # 合計ステップ数（DDPM論文の設定）
+
+# β_t: 各ステップで加えるノイズの量（線形スケジュール）
+betas = torch.linspace(1e-4, 0.02, T)   # 0.0001 〜 0.02 に線形増加
+
+# ᾱ_t = Π_{s=1}^{t} (1 - β_s)：t ステップ後の「元画像の残量」
+alphas      = 1 - betas
+alphas_bar  = torch.cumprod(alphas, dim=0)   # 累積積
+
+# 閉形式に使う係数を事前計算
+sqrt_ab           = torch.sqrt(alphas_bar)            # √ᾱ_t
+sqrt_one_minus_ab = torch.sqrt(1 - alphas_bar)        # √(1-ᾱ_t)
+
+print(f"t=0  のとき √ᾱ = {sqrt_ab[0]:.4f}（元画像 ≈ そのまま）")
+# → 0.9999（ほぼノイズなし）
+print(f"t=999のとき √ᾱ = {sqrt_ab[-1]:.4f}（元画像 ≈ 消えている）")
+# → 0.0077（ほぼ純粋なノイズ）
+
+# ─── 前方拡散：閉形式で任意ステップの x_t を一発生成 ───
+def forward_diffusion(x0, t):
+    """
+    x0: (B, C, H, W) — 元の画像
+    t:  (B,)         — 各サンプルのタイムステップ
+    """
+    eps = torch.randn_like(x0)   # ε ~ N(0, I)
+
+    # x_t = √ᾱ_t × x_0 + √(1-ᾱ_t) × ε
+    # ↑ 元画像の成分   ↑ ノイズの成分
+    ab  = sqrt_ab[t].view(-1, 1, 1, 1)           # shape を合わせる
+    oab = sqrt_one_minus_ab[t].view(-1, 1, 1, 1)
+    x_t = ab * x0 + oab * eps
+
+    return x_t, eps    # x_t と「加えたノイズ ε」を返す
+
+# ─── 学習ループ（1ステップ）───
+def train_step(model, x0, optimizer):
+    """
+    model: ノイズを予測するネットワーク（U-Net など）
+           入力: (x_t, t) → 出力: ε_pred（予測ノイズ）
+    """
+    B = x0.shape[0]
+
+    # ① ランダムなタイムステップを選択（毎回異なる t で学習）
+    t = torch.randint(0, T, (B,))
+
+    # ② 閉形式でノイズを加えた x_t を生成
+    x_t, eps_true = forward_diffusion(x0, t)
+
+    # ③ モデルに「このノイズ x_t を作るために加えた ε は？」と聞く
+    eps_pred = model(x_t, t)
+
+    # ④ 予測ノイズと実際のノイズの差（MSE）を最小化
+    loss = ((eps_true - eps_pred) ** 2).mean()
+    # ↑ 驚くほどシンプル！GAN の複雑な学習ループと比べると格段に安定
+
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+    return loss.item()</pre>
+  </div>
+
+  <div class="training">
+    <div class="label">学習時のアルゴリズム</div>
+    <p>① ランダムなタイムステップ $t \sim \text{Uniform}(1, T)$ をサンプリング（$T$ は通常1000）<br>
+    ② $\mathbf{x}_t = \sqrt{\bar{\alpha}_t}\mathbf{x}_0 + \sqrt{1-\bar{\alpha}_t}\epsilon$ で一撃でノイズ追加（閉形式を活用）<br>
+    ③ $\epsilon_\theta(\mathbf{x}_t, t)$ でノイズを予測し MSE 損失で更新<br>
+    単純な MSE 損失で安定学習できることが GAN に対する大きな利点です。</p>
+  </div>
+  <div class="inference">
+    <div class="label">推論時 — 逆拡散の逐次デノイズ</div>
+    <p>$\mathbf{x}_T \sim \mathcal{N}(0, I)$ から出発し、$T$ ステップかけてノイズを除去します：</p>
+    <div class="math-block">$$\mathbf{x}_{t-1} = \frac{1}{\sqrt{\alpha_t}}\left(\mathbf{x}_t - \frac{1-\alpha_t}{\sqrt{1-\bar{\alpha}_t}}\epsilon_\theta(\mathbf{x}_t, t)\right) + \sigma_t \mathbf{z}$$</div>
+    <p><strong>DDPM</strong>: $T=1000$ ステップ → 高品質だが生成が遅い<br>
+    <strong>DDIM</strong>: 決定論的サンプリングで $T=20\sim50$ ステップに削減可能<br>
+    <strong>Classifier-Free Guidance (CFG)</strong>: 条件あり/なし予測を補間してクオリティと多様性を制御：$\hat{\epsilon} = \epsilon_\theta(\mathbf{x}_t) + w \cdot (\epsilon_\theta(\mathbf{x}_t, c) - \epsilon_\theta(\mathbf{x}_t))$（$w$ はガイダンス強度）</p>
+  </div>
+
+  <div class="ai-connection">
+    <div class="label">VAE/GANとの比較</div>
+    <div class="table-wrap"><table>
+      <tr><th></th><th>学習安定性</th><th>画像品質</th><th>多様性</th><th>生成速度</th></tr>
+      <tr><td>VAE</td><td>安定</td><td>ぼやけがち</td><td>高</td><td>速（1ステップ）</td></tr>
+      <tr><td>GAN</td><td>不安定</td><td>高品質</td><td>低（Mode Collapse）</td><td>速（1ステップ）</td></tr>
+      <tr><td>Diffusion</td><td>非常に安定</td><td>最高品質</td><td>高</td><td>遅（$T$ステップ）</td></tr>
+    </table></div>
+  </div>
+
+  <div class="matome">
+    <span class="matome-label">本節のまとめ</span>
+    <ul>
+      <li>前方拡散：画像にノイズを少しずつ加えて純粋ノイズに変換。閉形式で任意ステップを一発計算</li>
+      <li>学習：「加えたノイズ ε を予測する」というシンプルなMSE損失で安定学習</li>
+      <li>逆拡散：純粋ノイズからTステップかけてノイズを取り除いて画像を生成</li>
+      <li>DDIM で推論ステップを大幅削減。CFGで品質と多様性をトレードオフ制御</li>
+    </ul>
+  </div>
+
+  </div>
+</div>
+
+<!-- 強化学習 -->
+<div class="topic" id="t-rl" style="border-left-color:var(--month6)">
+  <h3>強化学習 <span class="day-tag">Day 113–117</span></h3>
+  <div class="topic-body">
+
+  <p class="topic-lead">教師あり学習は「正解データ」が必要ですが、強化学習は「報酬」だけを手掛かりに学習します。チェスや囲碁では全ての局面に「正解手」を定義できませんが、「勝ち負け」という報酬は明確です。AlphaGoは強化学習でプロ棋士を圧倒し、ChatGPTもRLHF（人間のフィードバックからの強化学習）で「人に役立つ回答」を学習しています。</p>
+
+  <div class="visual">
+    <div class="label">強化学習のイメージ：「ゲームで高得点を目指すAI」</div>
+    <p>強化学習のエージェントはゲームプレイヤーのように行動します。<br>
+    ・<strong>状態（State）$s$</strong>：現在のゲーム画面<br>
+    ・<strong>行動（Action）$a$</strong>：上下左右への移動<br>
+    ・<strong>報酬（Reward）$r$</strong>：コインを取ると+1、死ぬと-100<br>
+    ・<strong>方策（Policy）$\pi$</strong>：状態を見て行動を決めるルール<br><br>
+    エージェントは「今の報酬」だけでなく「将来の累積報酬」を最大化しようとします。これがベルマン方程式の核心です。</p>
+  </div>
+
+  <h4>ベルマン方程式 — 「今の価値 = 今の報酬 + 未来の価値」</h4>
+  <div class="math-block">
+    $$V^*(s) = \max_a \left[R(s, a) + \gamma \sum_{s'} P(s'|s,a) V^*(s')\right]$$
+  </div>
+  <div class="math-block">
+    $$Q^*(s, a) = R(s, a) + \gamma \sum_{s'} P(s'|s, a) \max_{a'} Q^*(s', a')$$
+  </div>
+  <p>$\gamma \in [0,1)$ は割引率（将来の報酬をどれだけ重視するか）。これらは再帰的な方程式で、動的計画法や近似（DQN等）で解きます。</p>
+
+  <h4>Q学習 — ベルマン方程式を反復で解く</h4>
+  <div class="math-block">
+    $$Q(s, a) \leftarrow Q(s, a) + \alpha \left[\underbrace{r + \gamma \max_{a'} Q(s', a')}_{\text{TD目標}} - Q(s, a)\right]$$
+  </div>
+
+  <div class="code-block">
+    <span class="code-label">Python — Q学習をゼロから実装（迷路を解くエージェント）</span>
+    <pre>import numpy as np
+
+# ─── 環境の定義（4×4グリッド迷路）───
+# 状態 0〜15 の格子世界。15 がゴール
+# 行動: 0=上, 1=右, 2=下, 3=左
+n_states  = 16    # 4×4 = 16 状態
+n_actions = 4     # 上右下左
+
+def step(state, action):
+    """行動を実行して次の状態と報酬を返す"""
+    row, col = state // 4, state % 4
+
+    if   action == 0: row -= 1   # 上
+    elif action == 1: col += 1   # 右
+    elif action == 2: row += 1   # 下
+    elif action == 3: col -= 1   # 左
+
+    # 壁に当たったらその場に留まる
+    row = max(0, min(3, row))
+    col = max(0, min(3, col))
+    next_state = row * 4 + col
+
+    # 報酬の設定
+    if next_state == 15:   reward, done = +1.0, True   # ゴール
+    else:                  reward, done = -0.01, False  # 移動コスト
+
+    return next_state, reward, done
+
+# ─── Q テーブルの初期化 ───
+Q = np.zeros((n_states, n_actions))  # 全ての状態・行動の価値推定
+
+# ─── ハイパーパラメータ ───
+alpha   = 0.1    # 学習率（Q値の更新幅）
+gamma   = 0.99   # 割引率（将来の報酬をどれだけ重視するか）
+epsilon = 0.1    # 探索率（10%の確率でランダム行動 = 探索）
+
+# ─── ε-greedy 行動選択 ───
+def choose_action(state):
+    if np.random.random() < epsilon:
+        return np.random.randint(n_actions)  # ランダム探索（新しい経路を試す）
+    return np.argmax(Q[state])              # 現在の最良行動を選択
+
+# ─── 学習ループ（1000エピソード）───
+for episode in range(1000):
+    s = 0     # スタート位置（状態0）
+    total_reward = 0
+
+    while True:
+        a       = choose_action(s)
+        s_next, r, done = step(s, a)
+
+        # ─ TD更新（ベルマン方程式の近似）─
+        # TD目標: r + γ × max_a Q(s', a')（「もし最適に行動したときの将来価値」）
+        td_target = r + gamma * np.max(Q[s_next]) * (not done)
+        # TD誤差: 目標値と現在の推定値のズレ
+        td_error  = td_target - Q[s, a]
+        # Q値を少しずつ目標に近づける
+        Q[s, a] += alpha * td_error
+
+        s = s_next
+        total_reward += r
+        if done:
+            break
+
+    if episode % 200 == 0:
+        print(f"episode {episode:4d}: total_reward = {total_reward:.3f}")
+
+# ─── 学習結果の確認 ───
+print("\n学習済みQ値の最良行動（0=上,1=右,2=下,3=左）:")
+best_actions = np.argmax(Q, axis=1)
+print(best_actions.reshape(4, 4))   # ゴール(右下)に向かう経路が現れるはず</pre>
+  </div>
+
+  <div class="ai-connection">
+    <div class="label">RLHF (Reinforcement Learning from Human Feedback) の数学</div>
+    <p>ChatGPT・Claude等の学習プロセスは3段階です：</p>
+    <p><strong>① SFT（教師あり微調整）</strong>：高品質なデモデータで事前学習済み LLM をファインチューニング（通常の交差エントロピー損失）。</p>
+    <p><strong>② 報酬モデル学習</strong>：同じプロンプトへの2つの応答を人間が比較し、ブラッドリー-テリーモデルで確率化：</p>
+    <div class="math-block">$$P(y_w \succ y_l) = \sigma(r_\phi(x, y_w) - r_\phi(x, y_l))$$</div>
+    <p><strong>③ PPO 最適化</strong>：報酬最大化 + KL ペナルティで SFT モデルからの逸脱を防ぐ：</p>
+    <div class="math-block">$$\max_\pi \mathbb{E}[r_\phi(x,y)] - \beta D_{KL}(\pi \| \pi_{SFT})$$</div>
+    <p>最近は PPO の複雑さを回避する <strong>DPO（Direct Preference Optimization）</strong> が主流になりつつあります。選好データから直接ポリシーを最適化します：</p>
+    <div class="math-block">$$\mathcal{L}_{DPO} = -\mathbb{E}\left[\log \sigma\left(\beta \log\frac{\pi_\theta(y_w|x)}{\pi_{ref}(y_w|x)} - \beta \log\frac{\pi_\theta(y_l|x)}{\pi_{ref}(y_l|x)}\right)\right]$$</div>
+  </div>
+
+  <div class="matome">
+    <span class="matome-label">本節のまとめ</span>
+    <ul>
+      <li>強化学習は「報酬」だけを手掛かりに「累積報酬を最大化する方策」を学習する</li>
+      <li>ベルマン方程式：「状態の価値 = 今の報酬 + γ × 次の状態の最良価値」という再帰式</li>
+      <li>Q学習はTD誤差を使ってベルマン方程式を反復的に近似する</li>
+      <li>RLHF = SFT → 報酬モデル → PPO の3段階。LLMが人間の好みを学ぶ仕組み</li>
+      <li>DPOはRLHFよりシンプルで、報酬モデル不要。現在主流になりつつある</li>
+    </ul>
+  </div>
+
+  </div>
+</div>
+
+<!-- NLP -->
+<div class="topic" id="t-nlp" style="border-left-color:var(--month6)">
+  <h3>自然言語処理 <span class="day-tag">Day 118–122</span></h3>
+  <div class="topic-body">
+
+  <p class="topic-lead">コンピュータはそのままでは文字を「意味」として理解できません。NLPの根本的な問題は「単語を数値ベクトルに変換する」こと、つまりEmbedding（埋め込み）です。「王様 − 男性 + 女性 = 女王様」という有名なベクトル演算が示すように、適切な埋め込みはテキストの意味関係を数値空間に表現できます。</p>
+
+  <div class="visual">
+    <div class="label">Word2Vec のイメージ：「単語の意味を座標で表す地図」</div>
+    <p>「東京」「大阪」「京都」が地図上の位置で表せるように、単語の「意味」も高次元空間の座標で表せます。<br>
+    「dog（犬）」と「cat（猫）」は意味が近いので座標も近い。「dog」と「democracy（民主主義）」は意味が遠いので座標も遠い。<br><br>
+    さらにすごいのが：<strong>king（王）- man（男）+ woman（女）≈ queen（女王）</strong>という「ベクトル演算で意味の計算ができる」ことです。これは分布仮説（「文脈が似た単語は似た意味を持つ」）の力です。</p>
+  </div>
+
+  <h4>Word2Vec (Skip-gram) — 「周辺単語の予測から意味を学ぶ」</h4>
+  <p>「周辺の単語を予測する」タスクを解くことで単語の分散表現を学習します：</p>
+  <div class="math-block">
+    $$P(w_o | w_c) = \frac{\exp(\mathbf{v}_{w_o}' \cdot \mathbf{v}_{w_c})}{\sum_{w \in V} \exp(\mathbf{v}_w' \cdot \mathbf{v}_{w_c})}$$
+  </div>
+  <div class="code-block">
+    <span class="code-label">Python — Word2Vec の学習と単語類似度の計算</span>
+    <pre>from gensim.models import Word2Vec
+import numpy as np
+
+# コーパスの例（文のリスト）
+sentences = [
+    ["the", "dog", "ate", "the", "food"],
+    ["the", "cat", "ate", "the", "mouse"],
+    ["the", "king", "is", "a", "man"],
+    ["the", "queen", "is", "a", "woman"],
+]
+
+# Word2Vec学習（Skip-gram, 50次元）
+model = Word2Vec(sentences, vector_size=50,
+                 window=2, min_count=1, sg=1)
+
+# 単語ベクトルを取得
+v_king   = model.wv["king"]    # 50次元のベクトル
+v_man    = model.wv["man"]
+v_woman  = model.wv["woman"]
+
+# 類似単語を検索
+print(model.wv.most_similar("dog", topn=3))
+# → [("cat", 0.92), ("food", 0.71), ...]
+
+# ベクトル演算（大きなコーパスなら成立）
+result = model.wv.most_similar(
+    positive=["king", "woman"], negative=["man"]
+)
+print(result)  # → [("queen", ...), ...]</pre>
+  </div>
+
+  <p>語彙数 $|V|$ が数万〜数十万あるため分母の計算が重く、Negative Sampling で近似します。</p>
+
+  <div class="ai-connection">
+    <div class="label">Word2VecからTransformer Embeddingへの進化</div>
+    <p>Word2Vecは各単語に<strong>固定ベクトル</strong>を割り当てます。しかし同じ単語でも文脈により意味が変わります（例：「bank」は銀行？土手？）。BERTなどのTransformerは Self-Attentionにより<strong>文脈に応じた動的な表現</strong>を生成し、この限界を克服しました。これが「静的埋め込み → 文脈化埋め込み」の進化です。</p>
+  </div>
+
+  <h4>BPEトークナイゼーション — 「単語を部品に分解する」</h4>
+  <p>Byte Pair Encoding（BPE）は頻出バイグラムを繰り返しマージしてサブワード単位の語彙を構築します：</p>
+  <div class="math-block">
+    $$\text{「低頻度・希少単語」} \to \text{「サブワード分割」} \to \text{「既知トークンの組み合わせで表現」}$$
+  </div>
+  <div class="code-block">
+    <span class="code-label">Python — tiktoken でGPTのトークナイザーを使う（トークン分割を観察）</span>
+    <pre>import tiktoken
+
+# GPT-4のトークナイザー（cl100k_base — 語彙数100,256）
+enc = tiktoken.get_encoding("cl100k_base")
+
+# ─── 日本語と英語でトークン数がどう違うか比較 ───
+texts = {
+    "英語（単純）":   "Hello, world!",
+    "英語（専門語）":  "unhappiness in Tokyo",
+    "英語（コード）":  "def forward(self, x):",
+    "日本語":         "東京は日本の首都です",
+}
+
+for label, text in texts.items():
+    tokens = enc.encode(text)
+    print(f"{label:15s}: {len(tokens):3d} トークン  {text}")
+    # トークンの内容も表示
+    decoded = [enc.decode([t]) for t in tokens]
+    print(f"  分割: {decoded}")
+    print()
+
+# 出力例:
+# 英語（単純）:    3 トークン  Hello, world!
+#   分割: ['Hello', ',', ' world!']
+#
+# 英語（専門語）:  5 トークン  unhappiness in Tokyo
+#   分割: ['un', 'happiness', ' in', ' Tokyo']  ← un- をサブワード分割
+#
+# 日本語:         9 トークン  東京は日本の首都です
+#   分割: ['東京', 'は', '日本', 'の', '首都', 'です']  ← 漢字熟語単位
+#   注意: 日本語は英語の約3倍のトークンが必要 → APIコストに影響！
+
+# ─── トークナイザーの語彙数 ───
+print(f"語彙数: {enc.n_vocab:,}")   # → 100,256
+# 比較: GPT-2 は 50,257、Llama-3 は 128,256</pre>
+  </div>
+
+  <div class="code-block">
+    <span class="code-label">Python — Language Model の Temperature Sampling を実装する</span>
+    <pre>import torch
+import torch.nn.functional as F
+
+def sample_next_token(logits, temperature=1.0, top_k=None, top_p=None):
+    """
+    次のトークンをサンプリングする（LLMの推論デコード）
+
+    Args:
+        logits:      モデルが出力した生スコア (vocab_size,)
+        temperature: < 1 で確信が強まり（sharp）、> 1 で多様性が上がる（flat）
+        top_k:       上位k個のトークンのみ残して選択
+        top_p:       累積確率がp以上になるまでのトークンから選択（nucleus sampling）
+    """
+    # ① Temperature でスケール
+    logits = logits / temperature   # temperature=0.7: より確信が強くなる
+
+    # ② Top-k フィルタリング
+    if top_k is not None:
+        # 上位 k 個以外を -∞ にする
+        top_k_values, _ = torch.topk(logits, top_k)
+        threshold = top_k_values[-1]   # k 番目の値が閾値
+        logits = torch.where(logits >= threshold, logits,
+                             torch.full_like(logits, float('-inf')))
+
+    # ③ Top-p (Nucleus) フィルタリング
+    if top_p is not None:
+        probs_sorted, sorted_idx = torch.sort(F.softmax(logits, dim=-1),
+                                              descending=True)
+        cumsum = torch.cumsum(probs_sorted, dim=-1)
+        # 累積確率が top_p を超えた位置以降を除去
+        remove_mask = cumsum - probs_sorted > top_p
+        probs_sorted[remove_mask] = 0.0
+        # 元のインデックス順に戻す
+        logits.scatter_(0, sorted_idx, probs_sorted)
+
+    # ④ Softmax で確率に変換してサンプリング
+    probs = F.softmax(logits, dim=-1)
+    return torch.multinomial(probs, num_samples=1).item()
+
+
+# ─── 比較実験：temperature の効果 ───
+torch.manual_seed(42)
+vocab_size = 10
+logits = torch.randn(vocab_size)  # 仮のモデル出力
+probs_original = F.softmax(logits, dim=-1)
+
+print("元の確率分布:", probs_original.round(decimals=3).tolist())
+
+for temp in [0.1, 0.5, 1.0, 2.0]:
+    p = F.softmax(logits / temp, dim=-1)
+    # エントロピー（確率分布の「平坦さ」の指標）
+    entropy = -(p * p.log()).sum().item()
+    print(f"temperature={temp:.1f}: 最大確率={p.max():.3f}, "
+          f"エントロピー={entropy:.3f}")
+
+# temperature=0.1: 最大確率=0.997, エントロピー=0.014  ← ほぼ決定論的
+# temperature=0.5: 最大確率=0.843, エントロピー=0.674
+# temperature=1.0: 最大確率=0.533, エントロピー=1.412  ← 元の分布
+# temperature=2.0: 最大確率=0.243, エントロピー=2.090  ← よりランダム</pre>
+  </div>
+  <p>例：「unhappiness」→「un」「happiness」（各サブワードが学習済みベクトルを持つ）。GPT系はBPE、BERT系はWordPiece、T5はSentencePieceを使います。</p>
+
+  <div class="training">
+    <div class="label">学習時：言語モデルの事前学習</div>
+    <p>GPT系：次トークン予測（Causal LM）。全トークンを並列に損失計算できるため非常に効率的。BERT系：マスクトークン予測（MLM）+ 次文予測（NSP）。どちらもトークンのインデックスを教師ラベルとした交差エントロピー損失を使います。</p>
+  </div>
+  <div class="inference">
+    <div class="label">推論時：テキスト生成のデコード戦略</div>
+    <p><strong>Greedy</strong>: 常に最高確率のトークンを選択。速いが単調になりがち。<br>
+    <strong>Beam Search</strong>: 上位 $k$ 候補を保持して最高確率の系列を探索。翻訳等で有効。<br>
+    <strong>Top-p Sampling</strong>: 累積確率が $p$ を超えるまでのトークンからランダムサンプリング。<br>
+    温度・Top-p・Top-k を組み合わせて生成品質と多様性を制御するのが現代LLMの標準です。</p>
+  </div>
+
+  <div class="point-box">
+    <span class="point-label">ポイント</span>
+    <p>NLPの進化の流れ：Word2Vec（静的埋め込み）→ ELMo（文脈依存埋め込み）→ BERT（双方向Transformer）→ GPT（生成特化）→ ChatGPT（RLHF）→ 現在のLLM。各ステップで「文脈」の利用が深まっています。</p>
+  </div>
+
+  <div class="matome">
+    <span class="matome-label">本節のまとめ</span>
+    <ul>
+      <li>Word2Vec：「周辺単語の予測」タスクから単語の分散表現を学習する</li>
+      <li>分布仮説：文脈が似た単語は似た意味を持つ → king - man + woman ≈ queen</li>
+      <li>BPEトークナイゼーション：希少単語をサブワードに分解して語彙を管理</li>
+      <li>GPT系は次トークン予測（左から右）、BERT系はマスク予測（双方向）で事前学習</li>
+      <li>Word2Vec（固定）→ Transformer埋め込み（文脈依存）が現代NLPの核心的進化</li>
+    </ul>
+  </div>
+
+  </div>
+</div>
+
+<!-- LoRA / QLoRA -->
+<div class="topic" id="t-finetune" style="border-left-color:var(--month6)">
+  <h3>LoRA / QLoRA — パラメータ効率的ファインチューニング</h3>
+  <div class="topic-body">
+
+  <p class="topic-lead">GPT-4クラスのモデル（数百億パラメータ）を全パラメータ更新でファインチューニングするには数百GBのGPUメモリが必要です。<strong>LoRA（Low-Rank Adaptation）</strong>は「重み行列の変化量を低ランク行列で近似」することで、<strong>更新パラメータ数を100分の1以下</strong>に削減しながら同等の性能を達成します。QLoRAはさらに4bit量子化と組み合わせ、24GB GPU一枚で70Bモデルのファインチューニングを可能にしました。</p>
+
+  <div class="visual">
+    <div class="label">LoRAのアイデア：「変化量だけ低ランクで近似する」</div>
+    <pre style="font-size:0.82em;line-height:1.5">
+  元の重み行列 W (固定・更新しない)
+  ┌────────────────────────┐
+  │  W ∈ ℝ^{d×d}          │  ← 例: d=4096 → 16M パラメータ
+  │  (d=4096なら16Mパラメータ)│
+  └────────────────────────┘
+
+  LoRAが学習するのは「差分」ΔW だけ:
+  ΔW = B × A      (低ランク近似)
+       ↑     ↑
+       B∈ℝ^{d×r}  A∈ℝ^{r×d}   r=8 なら
+       (4096×8)   (8×4096)    パラメータ数 = 2×4096×8 = 65,536
+                               → 元の 0.4% だけ!
+
+  推論時: y = (W + α/r × B×A) x
+  α はスケーリング係数 (通常 α=r で相殺)
+    </pre>
+  </div>
+
+  <div class="math-block">
+    $$W' = W + \frac{\alpha}{r} BA, \quad A \sim \mathcal{N}(0, \sigma^2),\; B = 0$$
+    <p style="margin-top:0.5em;font-size:0.9em;color:var(--text-muted)">初期化: Aはランダム正規分布、Bはゼロ → 学習開始時は ΔW=0（元の挙動を保持）</p>
+  </div>
+
+  <div class="code-block">
+    <span class="code-label">Python — LoRAレイヤーのスクラッチ実装</span>
+    <pre>import torch
+import torch.nn as nn
+import math
+
+class LoRALinear(nn.Module):
+    """
+    LoRA付き線形層
+    元の重み W は凍結し、低ランク行列 B×A だけ学習する
+    """
+    def __init__(self, in_features, out_features, r=8, alpha=16):
+        super().__init__()
+        self.r = r
+        self.alpha = alpha
+        self.scaling = alpha / r          # スケーリング係数
+
+        # ─── 元の重み（凍結） ───
+        self.weight = nn.Parameter(
+            torch.randn(out_features, in_features) / math.sqrt(in_features),
+            requires_grad=False           # ← 更新しない！
+        )
+        self.bias = nn.Parameter(torch.zeros(out_features), requires_grad=False)
+
+        # ─── LoRA行列（学習対象） ───
+        # A: ランダム初期化（情報を受け取る側）
+        self.lora_A = nn.Parameter(torch.randn(r, in_features) * 0.01)
+        # B: ゼロ初期化（学習開始時は ΔW=0 を保証）
+        self.lora_B = nn.Parameter(torch.zeros(out_features, r))
+
+    def forward(self, x):
+        # 元の変換 + LoRAの差分
+        base_out = F.linear(x, self.weight, self.bias)
+        # ΔW x = B(Ax) を順番に計算（行列積の分解）
+        lora_out = (x @ self.lora_A.T) @ self.lora_B.T
+        return base_out + self.scaling * lora_out
+
+    def param_count(self):
+        total = self.weight.numel() + self.bias.numel()
+        lora  = self.lora_A.numel() + self.lora_B.numel()
+        print(f"元パラメータ: {total:,}  LoRAパラメータ: {lora:,}  比率: {lora/total:.2%}")
+
+# 動作確認
+import torch.nn.functional as F
+layer = LoRALinear(4096, 4096, r=8, alpha=16)
+layer.param_count()
+# 元パラメータ: 16,781,312  LoRAパラメータ: 65,536  比率: 0.39%
+
+x = torch.randn(2, 10, 4096)   # (batch=2, seq=10, d=4096)
+out = layer(x)
+print(f"出力 shape: {out.shape}")  # torch.Size([2, 10, 4096])</pre>
+  </div>
+
+  <div class="code-block">
+    <span class="code-label">Python — PEFT ライブラリでLLMにLoRAを適用（実用的な方法）</span>
+    <pre>from transformers import AutoModelForCausalLM, AutoTokenizer
+from peft import LoraConfig, get_peft_model, TaskType
+
+# ① ベースモデルの読み込み
+model_name = "meta-llama/Llama-2-7b-hf"  # 例: 7Bモデル
+model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.float16)
+
+# ② LoRA設定
+config = LoraConfig(
+    task_type=TaskType.CAUSAL_LM,
+    r=16,               # ランク（大きいほど表現力↑・パラメータ↑）
+    lora_alpha=32,      # スケーリング係数 α
+    lora_dropout=0.05,  # 過学習防止
+    target_modules=["q_proj", "v_proj"],  # Attention の Q・V 行列にのみ適用
+    bias="none"
+)
+
+# ③ LoRAを適用（元モデルの重みは自動で凍結される）
+model = get_peft_model(model, config)
+model.print_trainable_parameters()
+# trainable params: 4,194,304 || all params: 6,742,609,920 || trainable%: 0.0622%
+
+# ④ 通常通り学習（TrainerやカスタムループでOK）
+# trainer = Trainer(model=model, ...)
+# trainer.train()
+
+# ⑤ 保存（LoRAの差分行列だけ保存されるのでサイズが小さい）
+model.save_pretrained("./my_lora_adapter")  # ~数十MB
+# 後から読み込み: load_peft_model(base_model, "./my_lora_adapter")</pre>
+  </div>
+
+  <div class="code-block">
+    <span class="code-label">Python — QLoRA：4bit量子化 + LoRA（24GB GPUで70Bモデルを学習）</span>
+    <pre>from transformers import AutoModelForCausalLM, BitsAndBytesConfig
+from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+
+# ① 4bit量子化設定（NF4 = Normal Float 4: 正規分布に最適化された量子化形式）
+bnb_config = BitsAndBytesConfig(
+    load_in_4bit=True,                      # 4bitで読み込む
+    bnb_4bit_quant_type="nf4",             # NF4量子化（精度が最も高い）
+    bnb_4bit_compute_dtype=torch.bfloat16, # 計算はbf16で行う（量子化は保存のみ）
+    bnb_4bit_use_double_quant=True,        # 量子化スケール自体も量子化（さらに圧縮）
+)
+
+# ② 70Bモデルを4bitで読み込み（メモリ: 70B×4bit ≈ 35GB → 2GPU or 1×A100で可能）
+model = AutoModelForCausalLM.from_pretrained(
+    "meta-llama/Llama-2-70b-hf",
+    quantization_config=bnb_config,
+    device_map="auto"  # 複数GPUに自動分散
+)
+
+# ③ k-bit学習のための前準備（gradient checkpointing有効化など）
+model = prepare_model_for_kbit_training(model)
+
+# ④ LoRA設定（量子化モデルの上にLoRAを載せる = QLoRA）
+lora_config = LoraConfig(r=64, lora_alpha=128, target_modules=["q_proj","v_proj","k_proj","o_proj"])
+model = get_peft_model(model, lora_config)
+
+# メモリ使用量比較:
+# 70B fp16フルファインチューニング: ~140GB VRAM → A100×8台必要
+# 70B QLoRA (4bit + r=64):        ~35GB VRAM  → A100×1台で可能!</pre>
+  </div>
+
+  <div class="ai-connection">
+    <div class="label">LoRA が効く理由：「重み変化は低次元多様体に乗っている」</div>
+    <p>Aghajanyan et al. (2020) の研究で「事前学習済みモデルのファインチューニングに必要な固有次元（intrinsic dimension）は非常に低い」ことが示されました。GPT-3を GLUE タスクにファインチューニングするのに必要な固有次元は僅か数百次元程度です。LoRAはこの性質を利用し、億単位のパラメータの変化を数千〜数万パラメータの低ランク行列で近似しています。</p>
+  </div>
+
+  <div class="point-box">
+    <div class="label">LoRA の重要パラメータ</div>
+    <ul>
+      <li><strong>r（ランク）</strong>: 低ランク行列の次元。r=4〜64が一般的。大きいほど表現力↑・パラメータ↑。汎用タスクはr=8〜16、専門ドメインはr=32〜64が目安</li>
+      <li><strong>alpha（α）</strong>: スケーリング係数。多くの実装で <code>alpha=2×r</code> を推奨。学習率との相互作用に注意</li>
+      <li><strong>target_modules</strong>: どの層にLoRAを適用するか。通常はAttentionのQ/V行列。全線形層に適用するとさらに性能↑</li>
+      <li><strong>QLoRAの量子化形式</strong>: NF4 > INT8 > INT4（精度順）。NF4はNormalFloat4で正規分布のデータに最適化されており重みデータに最も向いている</li>
+    </ul>
+  </div>
+
+  <div class="matome">
+    <div class="label">まとめ</div>
+    <ul>
+      <li>LoRA：重み変化 ΔW を低ランク行列 BA で近似し、学習パラメータを100分の1以下に削減</li>
+      <li>元の重みは凍結 → 推論時は W+BA をマージして速度劣化なし</li>
+      <li>QLoRA = LoRA + 4bit量子化 → 24GB GPU一枚で70Bモデルのファインチューニングを実現</li>
+      <li>実用的には PEFT ライブラリを使い、r=16, alpha=32 から始めるのが定石</li>
+    </ul>
+  </div>
+
+  </div>
+</div>
+
+<!-- 量子化 -->
+<div class="topic" id="t-quant" style="border-left-color:var(--month6)">
+  <h3>量子化 — モデルを小さく・速く</h3>
+  <div class="topic-body">
+
+  <p class="topic-lead">通常のニューラルネットワークは32bit浮動小数点（fp32）で保存されますが、<strong>量子化</strong>によって重みを8bit整数（INT8）や4bit整数（INT4）で表現することで、モデルサイズを75〜87.5%削減し、推論速度を2〜4倍高速化できます。GPT-2（117M）ならfp32で~460MB → INT8で~115MBになります。</p>
+
+  <div class="visual">
+    <div class="label">量子化の仕組み：「小数を整数に丸める」</div>
+    <pre style="font-size:0.82em;line-height:1.5">
+  fp32 (32bit): -1.234567  →  4バイト
+  fp16 (16bit): -1.234     →  2バイト  (2× 小さく)
+  INT8  (8bit): -123       →  1バイト  (4× 小さく)  ← 量子化
+  INT4  (4bit): -8〜7範囲  →  0.5バイト (8× 小さく) ← QLoRAで使用
+
+  量子化式（対称量子化）:
+    w_int = round(w_float / scale)
+    scale = max(|W|) / 127    (INT8の場合、範囲 -127〜127)
+
+  逆量子化（推論時の計算に使用）:
+    w_dequant ≈ w_int × scale
+
+  誤差は生じるが、LLMの重みは統計的に正規分布に近いため
+  低ランクの変動は失われにくい → 品質への影響は限定的
+    </pre>
+  </div>
+
+  <div class="code-block">
+    <span class="code-label">Python — 量子化のスクラッチ実装（原理理解）</span>
+    <pre>import torch
+import numpy as np
+
+def quantize_int8(weight: torch.Tensor):
+    """
+    fp32 重みテンソルを INT8 に量子化する
+    対称量子化（Symmetric Quantization）
+    """
+    # ① スケールを計算（最大絶対値 → INT8の範囲 127 にマッピング）
+    scale = weight.abs().max() / 127.0
+
+    # ② 整数に丸める（clamp で範囲外をクリップ）
+    w_int8 = (weight / scale).round().clamp(-127, 127).to(torch.int8)
+
+    return w_int8, scale
+
+def dequantize_int8(w_int8: torch.Tensor, scale: float) -> torch.Tensor:
+    """INT8 → fp32 に逆量子化"""
+    return w_int8.to(torch.float32) * scale
+
+# 動作確認
+W = torch.randn(4, 4)
+print("元の重み:\n", W)
+
+W_int8, scale = quantize_int8(W)
+print(f"\n量子化後（INT8）:\n{W_int8}")
+print(f"スケール: {scale:.6f}")
+
+W_dequant = dequantize_int8(W_int8, scale)
+print(f"\n逆量子化後:\n{W_dequant}")
+
+error = (W - W_dequant).abs()
+print(f"\n量子化誤差: 平均={error.mean():.6f}, 最大={error.max():.6f}")
+# 量子化誤差: 平均=0.003..., 最大=0.007...（非常に小さい）
+
+# メモリ削減率の計算
+fp32_bytes = W.numel() * 4  # 4バイト/要素
+int8_bytes  = W_int8.numel() * 1  # 1バイト/要素
+print(f"\nfp32: {fp32_bytes}バイト → INT8: {int8_bytes}バイト ({int8_bytes/fp32_bytes:.0%})")</pre>
+  </div>
+
+  <div class="code-block">
+    <span class="code-label">Python — PyTorch 動的量子化（LSTM・Transformerに即適用）</span>
+    <pre>import torch
+import torch.quantization
+
+# ─── 動的量子化（Dynamic Quantization） ───
+# 重みは量子化、活性化は実行時に動的に量子化 → 変換が最も簡単
+model = torch.nn.Sequential(
+    torch.nn.Linear(768, 3072),
+    torch.nn.ReLU(),
+    torch.nn.Linear(3072, 768)
+)
+
+# わずか1行で適用！
+model_q = torch.quantization.quantize_dynamic(
+    model,
+    {torch.nn.Linear},   # どの層を量子化するか
+    dtype=torch.qint8     # INT8量子化
+)
+
+# サイズ比較
+def model_size_mb(m):
+    return sum(p.numel() * p.element_size() for p in m.parameters()) / 1024**2
+
+print(f"fp32: {model_size_mb(model):.2f} MB")
+print(f"INT8: {model_size_mb(model_q):.2f} MB")
+# fp32: 9.44 MB → INT8: 2.36 MB (約4倍圧縮)
+
+# 推論速度比較
+import time
+x = torch.randn(32, 768)
+for label, m in [("fp32", model), ("INT8", model_q)]:
+    start = time.time()
+    for _ in range(100):
+        with torch.no_grad():
+            _ = m(x)
+    print(f"{label}: {(time.time()-start)*10:.2f} ms/回")</pre>
+  </div>
+
+  <div class="code-block">
+    <span class="code-label">Python — GPTQ / AWQ（後量子化の最先端：4bit LLM）</span>
+    <pre>## ─── GPTQ (Post-Training Quantization for Generative Pre-trained Transformers) ───
+# 原理: Hessian行列を使って「各重みを量子化する際の誤差を補正」する
+# OBQ (Optimal Brain Quantization) の改良版で LLM に特化
+
+from transformers import AutoModelForCausalLM, GPTQConfig
+
+# GPTQ設定（キャリブレーションデータが必要）
+gptq_config = GPTQConfig(
+    bits=4,                    # 4bit量子化
+    dataset="c4",              # キャリブレーション用データセット
+    tokenizer=tokenizer
+)
+model_gptq = AutoModelForCausalLM.from_pretrained(
+    "meta-llama/Llama-2-7b-hf",
+    quantization_config=gptq_config
+)
+# メモリ: 7B × 4bit ≈ 3.5GB VRAM（fp16の4倍小さい）
+
+## ─── AWQ (Activation-Aware Weight Quantization) ───
+# 原理: 活性化が大きい重みチャンネルは「重要」なので、スケールを調整して
+#       量子化誤差を小さくする → GPTQより高速な量子化、同等以上の精度
+
+from awq import AutoAWQForCausalLM
+
+model_awq = AutoAWQForCausalLM.from_pretrained("meta-llama/Llama-2-7b-hf")
+quant_config = {"zero_point": True, "q_group_size": 128, "w_bit": 4, "version": "GEMM"}
+model_awq.quantize(tokenizer, quant_config=quant_config)
+
+## 量子化手法の比較表（Llama-2-7B, WikiText perplexity）:
+# 手法        bits  PPL(↓が良い)  速度  実用性
+# fp16         16   5.47         1×   ベースライン
+# INT8 (LLM.int8) 8  5.51       0.8×  transformers直接対応
+# GPTQ-4bit    4   5.63         3.2×  精度と速度のバランス ★
+# AWQ-4bit     4   5.60         3.4×  現在最もよく使われる ★★</pre>
+  </div>
+
+  <div class="ai-connection">
+    <div class="label">量子化の4つのアプローチ</div>
+    <p><strong>① PTQ（Post-Training Quantization）</strong>: 学習済みモデルに後から量子化を適用。最も手軽。<br>
+    <strong>② QAT（Quantization-Aware Training）</strong>: 学習中に量子化のシミュレーションを行い、量子化に強いモデルを学習。精度が最も高いが計算コスト大。<br>
+    <strong>③ GPTQ</strong>: OBQアルゴリズムで重みを一つずつ量子化し、誤差を補正。LLMでの4bit量子化に有効。<br>
+    <strong>④ AWQ</strong>: 活性化の大きさで重要なチャンネルを特定し、スケールを調整。GPTQより高速・同精度。現在の主流。</p>
+  </div>
+
+  <div class="point-box">
+    <div class="label">実用的な量子化の選び方</div>
+    <ul>
+      <li><strong>開発・実験段階</strong>: <code>load_in_8bit=True</code>（transformers標準対応）→ 8bit、メモリ半減</li>
+      <li><strong>本番デプロイ（精度重視）</strong>: AWQ 4bit → サイズ75%削減、精度劣化最小</li>
+      <li><strong>エッジ・モバイル</strong>: QAT + INT4/INT8 → Apple Silicon / Android NPU最適化</li>
+      <li><strong>量子化+ファインチューニング</strong>: QLoRA → 4bit量子化 + LoRA で最強の効率化</li>
+    </ul>
+  </div>
+
+  <div class="matome">
+    <div class="label">まとめ</div>
+    <ul>
+      <li>量子化: fp32→INT8で4倍、fp32→INT4で8倍のモデル圧縮。推論速度も2〜4倍向上</li>
+      <li>GPTQ/AWQは4bit量子化でfp16に近い精度を維持（perplexity劣化 &lt;3%）</li>
+      <li>実用上の定番: AWQ（速度・精度バランス）または QLoRA（ファインチューニング時）</li>
+      <li>量子化誤差は正規分布的な重みには小さいため、LLMの大規模重みに特に有効</li>
+    </ul>
+  </div>
+
+  </div>
+</div>
+
+<!-- RAG -->
+<div class="topic" id="t-rag" style="border-left-color:var(--month6)">
+  <h3>RAG — 検索拡張生成</h3>
+  <div class="topic-body">
+
+  <p class="topic-lead">LLMは学習データに含まれない最新情報や、ドメイン固有知識（社内文書・専門DB）を知ることができません。<strong>RAG（Retrieval-Augmented Generation）</strong>は「まず関連文書を検索し、それをコンテキストとしてLLMに渡す」ことで、<strong>ファインチューニングなしで知識を拡張</strong>できます。ChatGPT の検索機能やNotebookLMがこの仕組みを使っています。</p>
+
+  <div class="visual">
+    <div class="label">RAGパイプライン全体図</div>
+    <pre style="font-size:0.82em;line-height:1.6">
+  ─── オフライン（事前処理）───────────────────────────────────
+  [文書群] → [チャンク分割] → [Embedding変換] → [ベクトルDB保存]
+   PDFs        512 token      text→768次元       FAISS / Chroma
+   HTMLs       overlap=128    embedding model     (高速近傍探索)
+
+  ─── オンライン（質問応答）────────────────────────────────────
+  [質問] → [Embeddingに変換] → [ベクトルDB検索] → [上位k件取得]
+   "○○とは"   query_vector     コサイン類似度↑     k=3〜5件
+
+              → [プロンプト構築] → [LLM生成] → [回答]
+                 "以下の文脈を参考に:   GPT-4等   根拠付き回答
+                  {retrieved_docs}
+                  質問:{query}"
+    </pre>
+  </div>
+
+  <div class="code-block">
+    <span class="code-label">Python — RAGパイプライン完全実装（FAISS + Sentence Transformers + OpenAI）</span>
+    <pre>import numpy as np
+import faiss                         # Facebook製の高速ベクトル検索ライブラリ
+from sentence_transformers import SentenceTransformer  # Embeddingモデル
+import openai
+
+# ─────────────────────────────────────────────────
+# STEP 1: 文書の準備とチャンク分割
+# ─────────────────────────────────────────────────
+documents = [
+    "LoRAは低ランク行列で重みの変化を近似することで学習パラメータを大幅削減する手法です。",
+    "トランスフォーマーのAttention機構はQ・K・V行列を使った内積で文脈を計算します。",
+    "拡散モデルはノイズ除去の逆プロセスを学習することで高品質な画像を生成します。",
+    "強化学習ではエージェントが環境と相互作用して報酬を最大化する方策を学習します。",
+    "バッチ正規化は各ミニバッチ内で活性化を正規化し、学習を安定させる手法です。",
+    "GPT系モデルはCausal Language Modelingで次のトークンを予測して事前学習します。",
+]
+
+# ─────────────────────────────────────────────────
+# STEP 2: テキストをEmbeddingに変換
+# ─────────────────────────────────────────────────
+# 日本語対応の多言語Embeddingモデル
+embed_model = SentenceTransformer("intfloat/multilingual-e5-base")
+
+print("文書をEmbeddingに変換中...")
+doc_embeddings = embed_model.encode(
+    ["passage: " + d for d in documents],  # e5モデルはprefixが必要
+    normalize_embeddings=True              # コサイン類似度のためL2正規化
+)
+print(f"Embedding shape: {doc_embeddings.shape}")
+# (6, 768) — 6文書 × 768次元
+
+# ─────────────────────────────────────────────────
+# STEP 3: FAISSインデックスの構築
+# ─────────────────────────────────────────────────
+dim = doc_embeddings.shape[1]  # 768
+
+# IndexFlatIP: 内積（Inner Product）で検索（L2正規化済みなので = コサイン類似度）
+index = faiss.IndexFlatIP(dim)
+index.add(doc_embeddings.astype(np.float32))
+print(f"インデックスに {index.ntotal} 件の文書を登録")
+
+def retrieve(query: str, k: int = 3) -> list[str]:
+    """クエリに関連する上位k件の文書を検索する"""
+    # クエリもEmbeddingに変換（query prefixを付ける）
+    query_embed = embed_model.encode(
+        ["query: " + query],
+        normalize_embeddings=True
+    )
+    # ベクトル検索（距離と文書インデックスを返す）
+    scores, indices = index.search(query_embed.astype(np.float32), k)
+    results = []
+    for score, idx in zip(scores[0], indices[0]):
+        results.append({"text": documents[idx], "score": float(score)})
+        print(f"  スコア={score:.4f}: {documents[idx][:40]}...")
+    return results
+
+# ─────────────────────────────────────────────────
+# STEP 4: RAG生成（検索 + LLMへのプロンプト構築）
+# ─────────────────────────────────────────────────
+def rag_generate(query: str) -> str:
+    """RAGパイプライン: 検索 → プロンプト構築 → 生成"""
+    print(f"\n質問: {query}")
+    print("関連文書を検索中...")
+
+    # ① 関連文書の検索
+    retrieved = retrieve(query, k=3)
+    context = "\n".join([f"[{i+1}] {r['text']}" for i, r in enumerate(retrieved)])
+
+    # ② プロンプト構築（Retrieved Augmented Prompt）
+    prompt = f"""以下の参考情報を使って質問に答えてください。参考情報にない内容は「情報がありません」と答えてください。
+
+参考情報:
+{context}
+
+質問: {query}
+
+回答:"""
+
+    # ③ LLMで回答生成（実際はOpenAI APIなど）
+    # response = openai.chat.completions.create(
+    #     model="gpt-4o-mini",
+    #     messages=[{"role": "user", "content": prompt}]
+    # )
+    # return response.choices[0].message.content
+
+    # デモ用（実際のAPI呼び出しの代わりにプロンプトを表示）
+    print(f"\n--- 構築したプロンプト ---\n{prompt}\n")
+    return "[LLM API を呼び出して回答を生成]"
+
+result = rag_generate("トランスフォーマーの仕組みを教えてください")
+</pre>
+  </div>
+
+  <div class="code-block">
+    <span class="code-label">Python — 高度なRAG：リランキング（Reranking）で精度向上</span>
+    <pre>## RAGの精度改善: 2段階検索（Retrieval → Reranking）
+#
+# 問題: Embeddingベースの検索は「意味的な近さ」を測るが、
+#       細かいニュアンスを見落とすことがある
+# 解決: Cross-Encoderで「クエリと文書の関連度」を精密に再評価（リランキング）
+
+from sentence_transformers import CrossEncoder
+
+# ─── Cross-Encoder: Q と文書を一緒にエンコードして精密に評価 ───
+reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+
+def rag_with_reranking(query: str, first_k: int = 20, final_k: int = 3) -> list[str]:
+    """
+    2段階RAG:
+    1. Embedding検索で候補を多め(k=20)に取得（Recall重視）
+    2. Cross-Encoderで精密にリランキングして上位k=3を選ぶ（Precision重視）
+    """
+    # ① 第1段階: 粗い検索（高速だが精度は中程度）
+    query_embed = embed_model.encode(["query: " + query], normalize_embeddings=True)
+    _, indices = index.search(query_embed.astype(np.float32), min(first_k, len(documents)))
+    candidates = [documents[i] for i in indices[0] if i < len(documents)]
+
+    # ② 第2段階: Cross-Encoderでリランキング（遅いが精度高い）
+    pairs = [[query, doc] for doc in candidates]
+    scores = reranker.predict(pairs)
+
+    # スコア順にソート
+    ranked = sorted(zip(scores, candidates), reverse=True)
+    top_docs = [doc for _, doc in ranked[:final_k]]
+
+    print("リランキング後の上位文書:")
+    for score, doc in ranked[:final_k]:
+        print(f"  {score:.4f}: {doc[:50]}...")
+
+    return top_docs
+
+## RAG品質向上のその他の技法:
+# ・HyDE (Hypothetical Document Embeddings): 回答の仮説文書を生成してから検索
+# ・Parent-Child Chunking: 小チャンクで検索、大チャンクをコンテキストに
+# ・Query Expansion: LLMでクエリを言い換えて多角的に検索
+# ・Contextual Compression: 取得文書から質問に関連する部分だけ抽出
+# ・Self-RAG: LLMが「検索が必要か」「取得情報は関連するか」を自己判断</pre>
+  </div>
+
+  <div class="ai-connection">
+    <div class="label">RAG vs ファインチューニング — どちらを使うべきか</div>
+    <p><strong>RAGが有利な場面</strong>: 頻繁に更新される知識（ニュース・社内Wiki）、根拠の透明性が必要（出典を示せる）、大量の文書（数百万件）への対応、構築コストを抑えたい場合。<br>
+    <strong>ファインチューニングが有利な場面</strong>: 特定のスタイル・トーンを学習させたい、応答速度が最優先、ドメイン特有の推論パターンを習得させたい場合。<br>
+    <strong>RAG + ファインチューニングの組み合わせ</strong>が最強（RAGで知識を供給し、FTでスタイルや推論能力を向上）。</p>
+  </div>
+
+  <div class="matome">
+    <div class="label">まとめ</div>
+    <ul>
+      <li>RAGの核心: テキスト→Embedding→ベクトルDB（FAISS/Chroma）→コサイン類似度検索→LLMへのコンテキスト注入</li>
+      <li>精度向上の鍵はリランキング（Cross-Encoder）と適切なチャンク設計（サイズ・オーバーラップ）</li>
+      <li>ハルシネーション削減効果あり（「参考情報に基づいて回答」という制約を課せる）</li>
+      <li>実用的なスタックは: LangChain/LlamaIndex（フレームワーク）+ Chroma/Pinecone（DB）+ e5/BGE（Embedding）</li>
+    </ul>
+  </div>
+
+  </div>
+</div>
+
+<!-- マルチモーダル -->
+<div class="topic" id="t-multimodal" style="border-left-color:var(--month6)">
+  <h3>マルチモーダル — CLIP · Vision-Language Models</h3>
+  <div class="topic-body">
+
+  <p class="topic-lead">「この写真に猫が写っているか？」を判定するには、画像と「猫」というテキストを<strong>同じ意味空間に埋め込み</strong>、類似度を計算できれば良いです。<strong>CLIP（Contrastive Language-Image Pretraining）</strong>はOpenAIが2021年に発表したモデルで、4億枚の（画像, テキスト）ペアから対照学習によってこの共通埋め込み空間を学習しました。CLIPは現代のVision-Language Model（LLaVA, GPT-4V, Gemini等）の基盤技術です。</p>
+
+  <div class="visual">
+    <div class="label">CLIPの対照学習：「正しいペアを近く、他は遠くに」</div>
+    <pre style="font-size:0.82em;line-height:1.5">
+  ─── バッチ内の N=4 ペア ────────────────────────────────────
+
+  画像エンコーダ(ViT)    テキストエンコーダ(Transformer)
+  [犬の画像] → I₁       ["a photo of a dog"] → T₁
+  [猫の画像] → I₂       ["a photo of a cat"] → T₂
+  [車の画像] → I₃       ["a red sports car"] → T₃
+  [海の画像] → I₄       ["ocean sunset view"] → T₄
+
+  類似度行列 (N×N = 4×4):
+             T₁    T₂    T₃    T₄
+       I₁ [ 0.95  0.12  0.08  0.05 ]  ← (I₁,T₁) が正例
+       I₂ [ 0.11  0.93  0.09  0.07 ]  ← (I₂,T₂) が正例
+       I₃ [ 0.07  0.08  0.91  0.10 ]  ← (I₃,T₃) が正例
+       I₄ [ 0.06  0.09  0.11  0.94 ]  ← (I₄,T₄) が正例
+
+  損失: 対角成分（正例ペア）のスコアを最大化
+        非対角成分（負例ペア）のスコアを最小化
+        → InfoNCE Loss（対照損失）
+    </pre>
+  </div>
+
+  <div class="math-block">
+    $$\mathcal{L}_{\text{CLIP}} = -\frac{1}{N}\sum_{i=1}^{N} \log \frac{\exp(\text{sim}(I_i, T_i)/\tau)}{\sum_{j=1}^{N}\exp(\text{sim}(I_i, T_j)/\tau)}$$
+    <p style="margin-top:0.5em;font-size:0.9em;color:var(--text-muted)">$\tau$: 温度パラメータ（小さいほど分布がシャープ）/ sim: コサイン類似度 / N: バッチサイズ</p>
+  </div>
+
+  <div class="code-block">
+    <span class="code-label">Python — CLIPの対照損失スクラッチ実装</span>
+    <pre>import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+class CLIPLoss(nn.Module):
+    """
+    CLIP の InfoNCE 対照損失
+    画像-テキストペアを共通の埋め込み空間に引き寄せる
+    """
+    def __init__(self, temperature: float = 0.07):
+        super().__init__()
+        # 温度パラメータ: CLIPでは学習可能なパラメータとして実装
+        self.log_temperature = nn.Parameter(torch.log(torch.tensor(temperature)))
+
+    def forward(self, image_embeds: torch.Tensor, text_embeds: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            image_embeds: [N, D] — 正規化済み画像埋め込み
+            text_embeds:  [N, D] — 正規化済みテキスト埋め込み
+        Returns:
+            対照損失のスカラー値
+        """
+        N = image_embeds.shape[0]
+
+        # ① L2正規化（コサイン類似度 = 正規化済みベクトルの内積）
+        image_embeds = F.normalize(image_embeds, dim=-1)
+        text_embeds  = F.normalize(text_embeds,  dim=-1)
+
+        # ② 類似度行列 [N, N]（温度でスケーリング）
+        temperature = self.log_temperature.exp()
+        logits = (image_embeds @ text_embeds.T) / temperature
+        # logits[i,j] = sim(画像i, テキストj) / τ
+
+        # ③ 正解ラベル: 対角成分が正例（i番目の画像とi番目のテキストがペア）
+        labels = torch.arange(N, device=image_embeds.device)
+
+        # ④ CrossEntropyLoss = Softmax + NLL Loss
+        # 画像→テキスト方向と、テキスト→画像方向の両方を計算して平均
+        loss_i2t = F.cross_entropy(logits,   labels)  # 各画像のペアテキストを当てる
+        loss_t2i = F.cross_entropy(logits.T, labels)  # 各テキストのペア画像を当てる
+
+        return (loss_i2t + loss_t2i) / 2
+
+# 動作確認
+N, D = 8, 512  # バッチサイズ8, 埋め込み次元512
+image_embeds = torch.randn(N, D)
+text_embeds  = torch.randn(N, D)
+
+criterion = CLIPLoss(temperature=0.07)
+loss = criterion(image_embeds, text_embeds)
+print(f"CLIP Loss: {loss.item():.4f}")  # ランダムなので log(N) ≈ 2.08 付近</pre>
+  </div>
+
+  <div class="code-block">
+    <span class="code-label">Python — OpenCLIPを使ったゼロショット画像分類</span>
+    <pre>import open_clip
+import torch
+from PIL import Image
+import requests
+from io import BytesIO
+
+# ─── CLIPモデルの読み込み ───
+model, _, preprocess = open_clip.create_model_and_transforms(
+    'ViT-B-32',
+    pretrained='openai'       # OpenAIのCLIPの重みを使用
+)
+tokenizer = open_clip.get_tokenizer('ViT-B-32')
+model.eval()
+
+# ─── 画像の準備（URLから取得する例）───
+# image = preprocess(Image.open("dog.jpg")).unsqueeze(0)
+# ここではダミー画像で代替
+image = torch.randn(1, 3, 224, 224)  # 実際はpreprocesを通した画像
+
+# ─── ゼロショット分類 ───
+# 事前に学習したことがないクラスでも分類できる!
+classes = ["a photo of a dog", "a photo of a cat",
+           "a photo of a car", "a photo of a bird"]
+
+text_tokens = tokenizer(classes)  # テキストをトークン化
+
+with torch.no_grad():
+    image_features = model.encode_image(image)          # 画像→埋め込み
+    text_features  = model.encode_text(text_tokens)     # テキスト→埋め込み
+
+    # 正規化してコサイン類似度を計算
+    image_features = F.normalize(image_features, dim=-1)
+    text_features  = F.normalize(text_features,  dim=-1)
+
+    similarity = (image_features @ text_features.T).squeeze(0)
+    probs = similarity.softmax(dim=-1)
+
+print("ゼロショット分類結果:")
+for cls, prob in zip(classes, probs.tolist()):
+    print(f"  {prob:.2%}: {cls}")</pre>
+  </div>
+
+  <div class="code-block">
+    <span class="code-label">Python — LLaVAアーキテクチャ（Vision-Language Model）の仕組み</span>
+    <pre>import torch
+import torch.nn as nn
+
+## LLaVA (Large Language and Vision Assistant) のアーキテクチャ
+## = CLIP画像エンコーダ + 線形プロジェクション + LLM (Vicuna/LLaMA)
+##
+## 入力:  [画像] + [テキストの質問]
+## 出力:  [テキストの回答]
+
+class LLaVAProjector(nn.Module):
+    """
+    CLIP の画像埋め込みを LLM のテキスト空間に変換する
+    「言語」と「視覚」の橋渡し役
+    """
+    def __init__(self, clip_dim: int = 768, llm_dim: int = 4096):
+        super().__init__()
+        # MLPプロジェクター（LLaVA 1.5以降はMLPが標準）
+        self.projector = nn.Sequential(
+            nn.Linear(clip_dim, llm_dim),
+            nn.GELU(),
+            nn.Linear(llm_dim, llm_dim)
+        )
+
+    def forward(self, image_features: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            image_features: [B, num_patches, clip_dim]
+                           ViT-L/14 の場合: [B, 256, 1024]
+        Returns:
+            visual_tokens: [B, num_patches, llm_dim]
+                          LLMのワード埋め込みと同じ次元
+        """
+        return self.projector(image_features)
+
+## LLaVAの学習は3段階:
+## Stage 1: プロジェクターのみ学習（画像-テキストアライメント）
+##           約 600K (画像, キャプション) ペアで学習
+## Stage 2: プロジェクター + LLM のLoRAを学習（視覚的指示チューニング）
+##           約 158K の視覚的QAデータで学習
+## Stage 3 (LLaVA 1.5): フルファインチューニング（Academic VQAも含む）
+
+## 推論の流れ:
+## 1. 画像 → CLIPエンコーダ → 画像パッチの特徴量 [256, 1024]
+## 2. Projector → LLM空間の視覚トークン [256, 4096]
+## 3. テキスト「この画像について説明してください」→ テキストトークン [seq, 4096]
+## 4. [視覚トークン + テキストトークン] → LLM → 回答のテキスト
+
+## 現在の主要VLMの比較:
+# モデル       画像エンコーダ  LLM          視覚トークン数  特徴
+# LLaVA-1.6   CLIP-ViT-L   Mistral-7B   2880          動的解像度
+# InternVL2   InternViT-6B Internlm2    1024          中国語対応
+# Qwen-VL     ViT-G/14     Qwen-7B      256           日本語対応
+# GPT-4V      非公開       GPT-4        非公開         最高性能
+print(LLaVAProjector())
+</pre>
+  </div>
+
+  <div class="point-box">
+    <div class="label">マルチモーダルAIの応用領域（2024-2025）</div>
+    <ul>
+      <li><strong>ゼロショット物体認識</strong>: CLIPで「見たことのないクラス」を分類（ImageNet-21Kのクラスに事前学習不要）</li>
+      <li><strong>画像検索</strong>: テキストでE-Commerce商品検索（「赤いワンピース」で画像を検索）</li>
+      <li><strong>医療画像診断</strong>: BiomedCLIPで病理スライド + 診断テキストの対照学習</li>
+      <li><strong>動画理解</strong>: VideoLLaVA・Video-ChatGPTで「動画の中で何が起きているか」を質問応答</li>
+      <li><strong>OCR + 文書理解</strong>: Document AI（領収書・契約書の自動解析）</li>
+    </ul>
+  </div>
+
+  <div class="matome">
+    <div class="label">まとめ</div>
+    <ul>
+      <li>CLIPの核心: 画像とテキストを同じ空間に埋め込む対照学習。InfoNCE損失で正例ペアを近くし、負例を遠ざける</li>
+      <li>ゼロショット分類が可能: 「a photo of {クラス名}」というテキストとの類似度で分類</li>
+      <li>LLaVA = CLIP画像エンコーダ + MLPプロジェクター + LLM。視覚トークンをテキストトークンと連結してLLMに入力</li>
+      <li>2025年のVLMトレンド: 動的解像度、動画理解、思考連鎖（CoT）と組み合わせた視覚推論</li>
+    </ul>
+  </div>
+
+  </div>
+</div>
+
+<!-- Chain of Thought と推論モデル -->
+<div class="topic" id="t-reasoning" style="border-left-color:var(--month6)">
+  <h3>Chain of Thought と推論モデル</h3>
+  <div class="topic-body">
+
+  <p class="topic-lead">「山田さんは100円持っていて50円のパンを買った。残りはいくら？」という問題を、LLMは「50円」と一発で答えるより、「100 - 50 = 50円です」と<strong>思考の過程を書いてから答える</strong>方が正確です。これが<strong>Chain of Thought（CoT）</strong>プロンプティングです。OpenAIの o1/o3 モデルや DeepSeek-R1 は、この推論プロセスを長い内部独白（内部CoT）として実行することで、数学・論理・コーディングで人間トップレベルの性能を達成しました。</p>
+
+  <div class="visual">
+    <div class="label">通常のPromptとChain of Thoughtの比較</div>
+    <pre style="font-size:0.82em;line-height:1.6">
+  ─── 通常のプロンプト（誤りやすい）─────────────────────────
+  Q: Juliaは5個のリンゴを持っている。Mikiに3個あげ、
+     八百屋で7個買った。今何個持っている？
+  A: 9個   ← 間違いやすい (5-3+7=9 は正しいが過程が不明瞭)
+
+  ─── Few-Shot Chain of Thought ──────────────────────────────
+  Q: Juliaは5個のリンゴを持っている。Mikiに3個あげ、
+     八百屋で7個買った。今何個持っている？
+  A: まずJuliaが最初に持っているリンゴは5個です。
+     Mikiに3個あげると 5 - 3 = 2 個になります。
+     その後7個買うと 2 + 7 = 9 個になります。
+     答え: 9個   ← 正解（途中計算が検証可能）
+
+  ─── Zero-Shot CoT（「ステップバイステップで考えて」魔法の一文）────
+  Q: [問題] ステップバイステップで考えてください。
+  A: [モデルが自動的に思考手順を展開する]
+    </pre>
+  </div>
+
+  <div class="code-block">
+    <span class="code-label">Python — Chain of Thought プロンプトの実装パターン</span>
+    <pre>from openai import OpenAI
+client = OpenAI()  # OPENAI_API_KEY 環境変数が必要
+
+def solve_with_cot(problem: str, mode: str = "zero_shot") -> str:
+    """
+    Chain of Thought プロンプティングで問題を解く
+
+    Args:
+        mode: "standard" / "zero_shot" / "few_shot"
+    """
+    if mode == "standard":
+        # 通常: 直接回答を求める（推論プロセスなし）
+        prompt = f"次の問題を解いてください:\n{problem}"
+
+    elif mode == "zero_shot":
+        # Zero-Shot CoT: 「ステップバイステップ」の一言を追加するだけ
+        # Wei et al. (2022) が発見: この一文だけで性能が劇的に向上する!
+        prompt = f"次の問題を解いてください:\n{problem}\n\nステップバイステップで考えてください。"
+
+    elif mode == "few_shot":
+        # Few-Shot CoT: 例題を見せてから解かせる（最も高精度）
+        prompt = """以下の例を参考に、ステップバイステップで問題を解いてください。
+
+例題:
+Q: 農場に牛が15頭、鶏が8羽います。脚の合計は?
+A: 牛は4本脚なので 15×4=60本。鶏は2本脚なので 8×2=16本。
+   合計: 60+16=76本。答え: 76本
+
+問題:
+Q: """ + problem + "\nA:"
+
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.0  # 推論タスクは温度0で一貫性を確保
+    )
+    return response.choices[0].message.content
+
+# ─── Self-Consistency: 複数回サンプリングして多数決 ───
+def solve_with_self_consistency(problem: str, n_samples: int = 5) -> str:
+    """
+    Self-Consistency (Wang et al. 2022):
+    同じ問題をtemperature>0で複数回解いて、最も多い答えを採用
+    CoTより約10%性能向上
+    """
+    answers = []
+    for i in range(n_samples):
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user",
+                       "content": f"{problem}\nステップバイステップで考えて、最後に「答え: [数値]」の形式で答えてください。"}],
+            temperature=0.7  # 多様性のために温度を上げる
+        )
+        text = response.choices[0].message.content
+        # 最後の「答え: X」を抽出（実際はより堅牢なパースが必要）
+        answers.append(text)
+        print(f"サンプル{i+1}: {text[-30:]}")
+
+    # 多数決（ここでは簡略化; 実際は数値を抽出して集計）
+    from collections import Counter
+    # answer_nums = [extract_number(a) for a in answers]
+    # return Counter(answer_nums).most_common(1)[0][0]
+    print(f"\n{n_samples}回の回答から最頻値を選択")
+    return answers[0]  # デモ用</pre>
+  </div>
+
+  <div class="code-block">
+    <span class="code-label">Python — o1スタイル推論モデルの仕組みと使い方</span>
+    <pre>## ─── o1/o3/DeepSeek-R1 スタイルの推論モデル ───
+##
+## 仕組み:
+##   通常のLLM: 質問 → [1回のフォワードパス] → 回答
+##   推論モデル: 質問 → [長い思考チェーン（thinking tokens）] → 回答
+##
+##   thinking tokens は推論中のモデルの「内部独白」で、
+##   ・仮説を立てる ("もしA=3とすると...")
+##   ・誤りを修正する ("いや待って、それは違う...")
+##   ・複数アプローチを試みる
+##   という試行錯誤のプロセスを含む
+##
+## 学習方法: RLHF/GRPO などの強化学習で、正しい答えに到達する推論チェーンを強化
+
+# OpenAI o1 / o3 の使い方
+response = client.chat.completions.create(
+    model="o3-mini",       # o1, o1-mini, o3, o3-mini
+    reasoning_effort="medium",  # "low" / "medium" / "high" (o3-miniのみ)
+    messages=[
+        {"role": "user",
+         "content": """
+         以下の数学的証明の誤りを見つけてください:
+
+         1 = 1
+         1² = 1²
+         1² - 1 = 1² - 1
+         (1-1)(1+1) = 1(1-1)
+         (1+1) = 1  ← ここで両辺を(1-1)で割る
+         2 = 1  ???
+         """}
+    ]
+)
+# o3は「(1-1)=0で除算することはできない」という誤りを発見する
+print(response.choices[0].message.content)
+
+# ─── Anthropic Claude の Extended Thinking ───
+import anthropic
+claude = anthropic.Anthropic()
+
+response = claude.messages.create(
+    model="claude-opus-4-6",  # claude-sonnet-4-5など
+    max_tokens=16000,
+    thinking={
+        "type": "enabled",
+        "budget_tokens": 10000  # 思考に使える最大トークン数
+    },
+    messages=[{"role": "user",
+               "content": "円周率 π が無理数であることを証明してください。"}]
+)
+
+for block in response.content:
+    if block.type == "thinking":
+        print(f"[思考過程] {block.thinking[:200]}...")  # 内部推論（一部表示）
+    elif block.type == "text":
+        print(f"[回答] {block.text}")</pre>
+  </div>
+
+  <div class="code-block">
+    <span class="code-label">Python — Tree of Thoughts（ToT）と ReAct のパターン</span>
+    <pre>## ─── Tree of Thoughts (ToT) — 探索木による推論 ───
+## Yao et al. (2023): BFS/DFS で思考ノードを探索し、行き詰まったら別経路を試みる
+## CoT（線形）を「木」に拡張したもの
+
+def tree_of_thoughts_demo(problem: str) -> str:
+    """
+    ToT の簡易デモ（実際はLLMへの複数回呼び出しが必要）
+    各「思考ステップ」でk個の候補を生成し、評価して最良を選ぶ
+    """
+    system_prompt = """あなたは問題解決の専門家です。
+与えられた問題に対して、3つの異なるアプローチを簡潔に提案してください。
+各アプローチを [アプローチ1] [アプローチ2] [アプローチ3] の形式で書いてください。"""
+
+    # ステップ1: 複数の思考経路を生成
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user",   "content": problem}
+        ]
+    )
+    thoughts = response.choices[0].message.content
+    print(f"思考候補:\n{thoughts}\n")
+
+    # ステップ2: 最良の思考経路を評価・選択（実際はLLMに評価させる）
+    # ステップ3: 選択した経路で解を生成
+    return "[ToT が最良の思考経路を選択して解を生成]"
+
+## ─── ReAct (Reason + Act) — ツール使用付き推論 ───
+## Yao et al. (2022): 「推論」と「行動」を交互に繰り返すフレームワーク
+## LangChain の Agent がこのパターンを実装している
+
+react_example = """
+[質問] 東京の現在の気温は何度？それは平年と比べて何度差？
+
+[思考] 現在の気温を知るには検索ツールが必要だ。まず気温を調べよう。
+[行動] search("東京 現在の気温")
+[観察] 15°C（2024年11月現在）
+
+[思考] 次に平年気温が必要だ。
+[行動] search("東京 11月 平年気温")
+[観察] 15.3°C（11月の平年値）
+
+[思考] 差は 15 - 15.3 = -0.3°C
+[回答] 現在の東京の気温は15°Cで、平年より0.3°C低い。
+"""
+print("ReActの推論ループ例:")
+print(react_example)
+
+## 推論手法の比較（2024年時点の性能感）:
+# 手法              MATH  GSM8K  特徴
+# Standard Prompt   40%   80%   シンプルだが推論が苦手
+# Zero-Shot CoT     55%   90%   「ステップバイステップ」の一言で大幅改善
+# Few-Shot CoT      65%   95%   例題を与えてさらに向上
+# Self-Consistency  72%   96%   多数決で安定性向上
+# ToT               82%   97%   探索木で複雑な問題に対応
+# o1/o3 (推論LLM)  90%+  99%+  内部CoTで人間トップレベル</pre>
+  </div>
+
+  <div class="ai-connection">
+    <div class="label">なぜ長い思考が性能を上げるのか：「計算量スケーリング則」</div>
+    <p>Kaplan et al. (2020) のスケーリング則では「モデルサイズ・データ量・計算量を増やすと性能が向上する」ことを示しました。o1/o3 が発見したのは <strong>テスト時計算量（Test-Time Compute）のスケーリング</strong>です。同じモデルでも、推論に使う計算量（トークン数）を増やすことで性能が向上し、より小さいモデルでも推論時間を増やせば大きいモデルと同等以上の性能が出せる場合があります。「考える時間」を与えれば良い、という直感的な発想の実装です。</p>
+  </div>
+
+  <div class="point-box">
+    <div class="label">CoT / 推論モデルを使うべき場面</div>
+    <ul>
+      <li><strong>数学・論理パズル</strong>: 段階的な計算が必要。CoT / Self-Consistency が有効</li>
+      <li><strong>コード生成・デバッグ</strong>: エラーの原因分析に推論モデル（o3/DeepSeek-R1）が有効</li>
+      <li><strong>科学的推論</strong>: 物理・化学の問題解決に思考連鎖が必要</li>
+      <li><strong>普通の会話・翻訳・要約</strong>: CoTは不要。Standard Promptで十分（コスト節約）</li>
+      <li><strong>速度優先タスク</strong>: 推論モデルは遅くコストが高い。リアルタイム応答には不向き</li>
+    </ul>
+  </div>
+
+  <div class="matome">
+    <div class="label">まとめ</div>
+    <ul>
+      <li>CoT: 「ステップバイステップで考えてください」の一文で推論性能が大幅向上（Zero-Shot CoT）</li>
+      <li>Self-Consistency: temperature>0で複数回サンプリングして多数決 → さらに+5〜10%向上</li>
+      <li>Tree of Thoughts: 思考を木として探索し、行き詰まったら別経路を試みる（複雑な計画問題に有効）</li>
+      <li>o1/o3/DeepSeek-R1: 内部CoT（thinking tokens）をRLで強化学習 → テスト時計算量スケーリングで人間トップレベルの推論</li>
+      <li>2025年のトレンド: 推論とツール使用（ReAct）の組み合わせ = AIエージェント</li>
+    </ul>
+  </div>
+
+  </div>
+</div>
+
+<div class="page-nav">
+  <a href="month5.html">
+    <div class="nav-label">← 前のページ</div>
+    <div class="nav-title">Month 5: RNN・Attention・Transformer</div>
+  </a>
+  <a href="index.html" class="next">
+    <div class="nav-label">← 目次に戻る</div>
+    <div class="nav-title">ホーム（全体マップ）</div>
+  </a>
+</div>
+
+</div><!-- /container -->
+<button id="back-to-top" onclick="window.scrollTo({top:0,behavior:'smooth'})" title="先頭へ戻る">↑</button>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [{left:"$$",right:"$$",display:true},{left:"$",right:"$",display:false}],
+    throwOnError: false
+  });
+  document.querySelectorAll('.topic').forEach(topic => {
+    const h3 = topic.querySelector('h3');
+    if (!h3) return;
+    h3.addEventListener('click', () => topic.classList.toggle('collapsed'));
+  });
+  const bar = document.getElementById('progress-bar');
+  const btn = document.getElementById('back-to-top');
+  const tocLinks = document.querySelectorAll('.page-toc a');
+  const topics = document.querySelectorAll('.topic[id]');
+  window.addEventListener('scroll', () => {
+    const h = document.documentElement;
+    bar.style.width = Math.min((h.scrollTop / (h.scrollHeight - h.clientHeight)) * 100, 100) + '%';
+    btn.classList.toggle('visible', h.scrollTop > 400);
+    let current = '';
+    topics.forEach(t => { if (t.getBoundingClientRect().top <= 100) current = t.id; });
+    tocLinks.forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#' + current));
+  }, { passive: true });
+});
+</script>
+</body>
+</html>

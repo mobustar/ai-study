@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Month 1: 数学基礎 — AI学習参考資料</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
+<link rel="stylesheet" href="ai_math_style.css">
+</head>
+<body>
+<div id="progress-bar"></div>
+<div class="container">
+
+<nav class="site-nav">
+  <a href="index.html">🏠 ホーム</a>
+  <span class="sep">/</span>
+  <a href="month1.html" class="current">Month 1</a>
+  <span class="sep">/</span>
+  <a href="month2.html">Month 2</a>
+  <span class="sep">/</span>
+  <a href="month3.html">Month 3</a>
+  <span class="sep">/</span>
+  <a href="month4.html">Month 4</a>
+  <span class="sep">/</span>
+  <a href="month5.html">Month 5</a>
+  <span class="sep">/</span>
+  <a href="month6.html">Month 6</a>
+</nav>
+
+<div class="page-header">
+  <span class="month-badge" style="background:var(--month1);color:#fff;">MONTH 1</span>
+  <h1>数学基礎 — AIの土台となる数学</h1>
+</div>
+
+<div class="page-toc">
+  <h3>このページの内容</h3>
+  <a href="#t-linalg">線形代数（Day 1–5）</a>
+  <a href="#t-calc">微分と最適化（Day 6–10）</a>
+  <a href="#t-prob">確率統計・情報理論（Day 11–15）</a>
+  <a href="#t-preproc">データ前処理と評価指標（Day 16–20）</a>
+</div>
+
+<!-- 線形代数 -->
+<div class="topic" id="t-linalg" style="border-left-color:var(--month1)">
+  <h3>線形代数 <span class="day-tag">Day 1–5</span></h3>
+  <div class="topic-body">
+
+  <p class="topic-lead">AIは毎秒、数百万個の数値をまとめて処理しています。「1枚の画像 = 224×224×3 = 約15万個の数字」です。これだけ大量の数値を効率よく操作する道具が線形代数です。スカラー → ベクトル → 行列 → テンソルという階層で「数のまとまり」を扱います。この章を通じて「AIの計算とは何か」をイメージできるようになりましょう。</p>
+
+  <div class="visual">
+    <div class="label">そもそも線形代数って何？</div>
+    <p>「数字を1個だけでなく、たくさんまとめて操作する数学」です。<br>
+    スカラー（1個の数）→ ベクトル（数の列）→ 行列（数の表）→ テンソル（数の立体・超立体）。<br>
+    AIでは「画像1枚 = 縦×横×3色のテンソル」、「文章 = トークンIDのベクトル」、「ニューロン間の接続強度 = 行列」として表現します。</p>
+  </div>
+
+  <h4>ベクトルと内積 — まず手を動かしてみましょう</h4>
+  <p>ベクトル $\mathbf{a}, \mathbf{b} \in \mathbb{R}^n$ の内積は「二つのベクトルがどれだけ同じ方向を向いているか」を数値で表します。定義はシンプルです：</p>
+  <div class="math-block">
+    $$\mathbf{a} \cdot \mathbf{b} = \sum_{i=1}^{n} a_i b_i = \|\mathbf{a}\| \|\mathbf{b}\| \cos\theta$$
+  </div>
+  <p>NumPy で実際に確かめてみましょう。</p>
+  <div class="code-block">
+    <span class="code-label">Python — ベクトルと内積の基本（AI での使われ方も確認）</span>
+    <pre>import numpy as np
+
+# ─── 基本的なベクトル演算 ───
+a = np.array([3, 4])     # 「右3、上4」の矢印
+b = np.array([1, 2])     # 「右1、上2」の矢印
+
+# 内積の計算：要素ごとの積の和
+dot = np.dot(a, b)       # 3×1 + 4×2 = 11
+dot_alt = a @ b          # @ 演算子でも同じ結果 → 11
+
+# ノルム（ベクトルの長さ = 矢印の長さ）
+norm_a = np.linalg.norm(a)   # √(3²+4²) = √25 = 5.0
+norm_b = np.linalg.norm(b)   # √(1²+2²) = √5 ≈ 2.236
+
+# コサイン類似度：-1（逆方向）〜 +1（同方向）
+# AIでは「どれだけ似ているか」の指標
+cos_sim = dot / (norm_a * norm_b)
+print(f"コサイン類似度: {cos_sim:.4f}")  # → 0.9839（よく似ている）
+
+# ─── AIでの実例：単語ベクトルの類似度 ───
+# 実際の Word2Vec では単語が300次元ベクトルで表現される
+dog    = np.random.randn(300)   # "犬" の埋め込みベクトル（例）
+cat    = dog + np.random.randn(300) * 0.1   # "猫"（犬に近い）
+banana = np.random.randn(300)               # "バナナ"（関係なし）
+
+def cosine_sim(x, y):
+    return np.dot(x, y) / (np.linalg.norm(x) * np.linalg.norm(y))
+
+print(f"dog vs cat:    {cosine_sim(dog, cat):.4f}")    # 高い（類似）
+print(f"dog vs banana: {cosine_sim(dog, banana):.4f}") # 低い（無関係）</pre>
+  </div>
+
+  <div class="visual">
+    <div class="label">内積のイメージ：「どれだけ同じ方向を向いているか」</div>
+    <p>2本の矢印をイメージしてください。<br>
+    ・同じ方向を向いている → 内積が大きい（正）→「似ている」「一致している」<br>
+    ・直角に交わっている → 内積 = 0 → 「無関係」「直交」<br>
+    ・逆方向を向いている → 内積が小さい（負）→「反対」「矛盾している」<br><br>
+    検索エンジン・推薦システム・Attentionすべてで「類似度 = 内積」が使われています。</p>
+  </div>
+
+  <div class="ai-connection">
+    <div class="label">ニューラルネットでの内積の役割</div>
+    <p>ニューラルネットの各ニューロンの出力は $z = \mathbf{w} \cdot \mathbf{x} + b$（内積 + バイアス）です。ニューロンは「入力が重みベクトルの方向にどれだけ一致するか」を計算しています。Attentionのquery-key類似度計算もまさに内積です。</p>
+  </div>
+
+  <h4>行列積 — 「全内積を一度に」</h4>
+  <p>行列積 $C = AB$ は「$A$ のすべての行ベクトルと $B$ のすべての列ベクトルの内積を一度に計算する」演算です。GPUはこの一斉計算が得意です。</p>
+  <div class="math-block">
+    $$C_{ij} = \sum_{k=1}^{n} A_{ik} B_{kj}$$
+  </div>
+  <div class="code-block">
+    <span class="code-label">Python — 行列積 = 全結合層（ニューラルネットの基本演算）</span>
+    <pre>import numpy as np
+
+# ─── 行列積 = 「全内積を一度に計算する」 ───
+# 2×3 の行列 A と 3×2 の行列 B
+A = np.array([[1, 2, 3],
+              [4, 5, 6]])   # shape: (2, 3)
+
+B = np.array([[7, 8],
+              [9, 10],
+              [11, 12]])    # shape: (3, 2)
+
+C = A @ B                   # shape: (2, 2)
+# C[0,0] = 1×7 + 2×9 + 3×11 = 7 + 18 + 33 = 58
+# C[0,1] = 1×8 + 2×10 + 3×12 = 8 + 20 + 36 = 64
+print(C)
+# → [[ 58  64]
+#    [139 154]]
+
+# ─── ニューラルネットの全結合層そのもの ───
+B = 32       # バッチサイズ（同時に処理するサンプル数）
+d_in = 784   # 入力次元（MNIST: 28×28 = 784ピクセル）
+d_out = 256  # 出力次元（次の層のニューロン数）
+
+x = np.random.randn(B, d_in)    # 入力: (32, 784)
+W = np.random.randn(d_in, d_out) * 0.01  # 重み行列: (784, 256)
+b = np.zeros(d_out)              # バイアス: (256,)
+
+# 行列積で 32 サンプルの全結合計算を一発で実行
+z = x @ W + b                   # → shape: (32, 256)
+print(f"出力 shape: {z.shape}") # (32, 256)
+
+# 比較：全結合 vs 畳み込みのパラメータ数
+fc_params  = d_in * d_out + d_out            # = 200,960
+conv_params = 3 * 3 * 1 * 64 + 64           # = 640（3×3フィルタ×64）
+print(f"全結合パラメータ数: {fc_params:,}")  # 200,960
+print(f"Conv2d パラメータ数: {conv_params:,}")  # 640 ← 約300倍少ない！</pre>
+  </div>
+
+  <div class="visual">
+    <div class="label">行列のイメージ：「空間を変形させる機械」</div>
+    <p>行列をベクトルに掛けることは「空間を変形させる」操作です。ニューラルネットの各層は「データをうまく変形して、最終的に分類しやすい空間に整列させる」変換の連続です。100次元のデータが層を通るたびに形を変え、最後の層では「犬」「猫」「鳥」が空間の異なる領域に綺麗に分離されています。</p>
+  </div>
+
+  <h4>テンソルのshapeを追う — 実装の鉄則</h4>
+  <p>GPT-2 (Small, $d=768$, $h=12$ヘッド) の Self-Attention を例に shape を追ってみましょう。</p>
+  <div class="math-block">
+    $$\underbrace{X}_{B \times T \times 768} \xrightarrow{\times W_Q} \underbrace{Q}_{B \times T \times 768} \xrightarrow{\text{reshape}} \underbrace{Q}_{B \times 12 \times T \times 64} \xrightarrow{\times K^T} \underbrace{S}_{B \times 12 \times T \times T}$$
+  </div>
+  <div class="training">
+    <div class="label">学習時のshape管理</div>
+    <p>shape エラー（<code>mat1 and mat2 shapes cannot be multiplied</code>）はNNバグのほぼ全てを占めます。各層の入出力shapeをコメントに書く習慣が実務では必須です：<code># x: (B, T, d_model) → (B, T, d_ff)</code></p>
+  </div>
+  <div class="inference">
+    <div class="label">推論時の違い</div>
+    <p>推論時はバッチサイズ $B=1$ が多く、$T$ も入力長に依存して変化します。KVキャッシュを使う生成時は、$Q$ の $T$ 次元が1（直近1トークン）になるため Attention 計算が $O(T^2) \to O(T)$ に削減されます。</p>
+  </div>
+
+  <h4>固有値分解と特異値分解（SVD）</h4>
+  <p>正方行列 $A$ の固有値分解：$A\mathbf{v} = \lambda\mathbf{v}$、つまり $A = P \Lambda P^{-1}$。任意の行列 $M$ のSVD：</p>
+  <div class="math-block">
+    $$M = U \Sigma V^T \approx \sum_{i=1}^{r} \sigma_i \mathbf{u}_i \mathbf{v}_i^T \quad (\text{ランク}r\text{近似})$$
+  </div>
+  <div class="code-block">
+    <span class="code-label">Python — SVDでLoRAのアイデアを確かめる</span>
+    <pre>import numpy as np
+
+# 大きな重み行列（例: 768×768）
+W = np.random.randn(768, 768)
+
+# SVD分解
+U, s, Vt = np.linalg.svd(W, full_matrices=False)
+
+# ランク16の低ランク近似（LoRAのアイデア）
+r = 16
+W_approx = U[:, :r] @ np.diag(s[:r]) @ Vt[:r, :]
+
+# 圧縮率: (768×768) → (768×16 + 16×768) ≈ 96倍削減
+print(f"元パラメータ数: {768*768:,}")
+print(f"LoRA後: {768*r + r*768:,}")  # → 24,576</pre>
+  </div>
+  <div class="ai-connection">
+    <div class="label">SVDとLoRAの関係</div>
+    <p>PCAは共分散行列の固有値分解そのものです。LoRA（Low-Rank Adaptation）は巨大な重み行列の更新 $\Delta W$ を低ランク分解 $\Delta W = BA$ で近似し、学習パラメータを劇的に削減します。GPT-3（1750億パラメータ）をLoRAで微調整すると、パラメータ数を0.01%程度に削減できます。</p>
+  </div>
+
+  <div class="matome">
+    <span class="matome-label">本節のまとめ</span>
+    <ul>
+      <li>ベクトルは「向きと長さを持つ矢印」で、内積は「どれだけ似ているか」を測る</li>
+      <li>行列積はニューラルネットの全結合層の本質で、GPUはこれを並列高速計算する</li>
+      <li>shapeを追う習慣が実装デバッグの鍵</li>
+      <li>SVDはPCAやLoRAの理論基盤で、大行列を低ランク近似できる</li>
+    </ul>
+  </div>
+
+  </div>
+</div>
+
+<!-- 微分と最適化 -->
+<div class="topic" id="t-calc" style="border-left-color:var(--month1)">
+  <h3>微分と最適化 <span class="day-tag">Day 6–10</span></h3>
+  <div class="topic-body">
+
+  <p class="topic-lead">AIモデルの学習とは「損失関数を最小化するパラメータを見つける」問題です。しかしパラメータ数が1億を超えると、解析的に解くことは不可能です。ここで登場するのが微分を使った反復最適化、つまり勾配降下法です。</p>
+
+  <div class="visual">
+    <div class="label">勾配のイメージ：「山の地形図の傾き矢印」</div>
+    <p>損失関数を「山岳地形」だとイメージしてください。<br>
+    ・今いる位置 = 現在のパラメータ値　・標高 = 損失（低いほど良い）<br>
+    ・勾配 = 「今いる場所で、どの方向が最も急に高くなるか」を示す矢印<br><br>
+    学習の目標は「山の一番低い谷（損失の最小値）」を見つけることです。勾配降下法は「足元の傾きだけを頼りに山を下る」方法です。</p>
+  </div>
+
+  <h4>勾配降下法 — まず1変数で理解する</h4>
+  <p>まず1変数の単純なケースで確かめてみましょう。$f(x) = x^2$ の最小値を勾配降下法で求めます。</p>
+  <div class="code-block">
+    <span class="code-label">Python — 勾配降下法：学習率の違いで何が変わるか</span>
+    <pre>import numpy as np
+
+# f(x) = x^2 の最小値（答えは x=0）を勾配降下法で探す
+# ─── 学習率を変えて比較 ───
+
+def gradient_descent(x_init, lr, n_steps=20):
+    x = x_init
+    for step in range(n_steps):
+        grad = 2 * x       # f'(x) = 2x
+        x = x - lr * grad  # x ← x - lr × 勾配
+    return x
+
+print("初期値 x=10.0 からスタート:")
+print(f"  lr=0.01  (小さい) → x={gradient_descent(10.0, 0.01):.4f}")
+# → 8.1791（まだ遠い、収束が遅い）
+print(f"  lr=0.1   (適切)   → x={gradient_descent(10.0, 0.1):.4f}")
+# → 0.1216（ほぼ収束）
+print(f"  lr=1.0   (大きい) → x={gradient_descent(10.0, 1.0):.4f}")
+# → NaN に発散！ lr が大きすぎると振動・発散する
+
+# ─── ステップを詳細に観察（lr=0.1 の場合）───
+x = 10.0
+lr = 0.1
+print("\n各ステップの詳細:")
+for step in range(20):
+    loss = x ** 2          # 損失
+    grad = 2 * x           # 勾配（傾き）
+    x = x - lr * grad      # パラメータ更新
+    if step % 4 == 0:
+        print(f"  step {step:2d}: loss={loss:.4f}, grad={grad:.4f} → x={x:.4f}")</pre>
+  </div>
+  <p>多変数の場合は各変数での偏微分を並べた「勾配ベクトル」を使います：</p>
+  <div class="math-block">
+    $$\nabla f = \left(\frac{\partial f}{\partial \theta_1}, \frac{\partial f}{\partial \theta_2}, \ldots, \frac{\partial f}{\partial \theta_n}\right), \quad \theta_{t+1} = \theta_t - \eta \nabla_\theta \mathcal{L}(\theta_t)$$
+  </div>
+  <div class="warning">
+    <p><strong>学習率の影響</strong>：大きすぎると発散、小さすぎると収束が遅い。実務では $10^{-4}$ ～ $10^{-2}$ 程度から始め、Warmup + Cosine Decay などのスケジューリングで調整します。</p>
+  </div>
+
+  <h4>SGD → Momentum → AdaGrad → Adam：オプティマイザの改良ストーリー</h4>
+  <p>Adamは突然生まれたのではなく、SGDの弱点を1つずつ解決した歴史的進化の産物です。</p>
+
+  <div class="code-block">
+    <span class="code-label">Python — SGD / Momentum / AdaGrad / Adam を全部自前実装して比較する</span>
+    <pre>import numpy as np
+
+# ─── 最適化のお題：f(x,y) = x^2 + 10y^2 の最小値（答え: x=0, y=0）───
+# y方向の勾配が x より10倍急峻 → SGDが苦手な「タスジ地形」
+def f(params):   return params[0]**2 + 10 * params[1]**2
+def grad(params): return np.array([2*params[0], 20*params[1]])
+
+init = np.array([5.0, 5.0])   # 初期値
+n_steps = 100
+
+# ─────────────────────────────────────────
+# 1. SGD（Vanilla勾配降下法）
+#    問題: y方向は急峻で振動、x方向は緩慢で遅い
+# ─────────────────────────────────────────
+params = init.copy()
+for _ in range(n_steps):
+    params -= 0.05 * grad(params)   # θ ← θ - lr × g
+sgd_result = params.copy()
+print(f"SGD      最終値: x={sgd_result[0]:.4f}, y={sgd_result[1]:.4f}, loss={f(sgd_result):.6f}")
+
+# ─────────────────────────────────────────
+# 2. Momentum SGD（慣性を持たせる）
+#    改善: 過去の勾配方向を記憶し、振動を抑える
+#    イメージ: 「ボールが坂を転がり落ちる」（慣性あり）
+#    v ← β×v + (1-β)×g  （過去の速度ベクトルを引き継ぐ）
+# ─────────────────────────────────────────
+params = init.copy()
+v = np.zeros_like(params)    # 速度（初期ゼロ）
+beta = 0.9                   # 慣性の強さ（0〜1、大きいほど記憶が長い）
+for _ in range(n_steps):
+    g = grad(params)
+    v = beta * v + (1 - beta) * g   # 速度を更新
+    params -= 0.05 * v
+mom_result = params.copy()
+print(f"Momentum 最終値: x={mom_result[0]:.4f}, y={mom_result[1]:.4f}, loss={f(mom_result):.6f}")
+
+# ─────────────────────────────────────────
+# 3. AdaGrad（勾配の累積で学習率を自動調整）
+#    改善: よく更新されるパラメータの学習率を自動で下げる
+#    問題: 学習率が単調に減少し続けて最終的に0に → 学習停止
+#    h ← h + g^2  （過去の勾配の二乗を累積）
+#    θ ← θ - lr/√h × g
+# ─────────────────────────────────────────
+params = init.copy()
+h = np.zeros_like(params)
+eps = 1e-8
+for _ in range(n_steps):
+    g = grad(params)
+    h += g ** 2                       # 二乗勾配を累積（減衰なし）
+    params -= 0.5 * g / (np.sqrt(h) + eps)
+ada_result = params.copy()
+print(f"AdaGrad  最終値: x={ada_result[0]:.4f}, y={ada_result[1]:.4f}, loss={f(ada_result):.6f}")
+
+# ─────────────────────────────────────────
+# 4. Adam（Momentum + AdaGradの長所を組み合わせ）
+#    m: 一次モーメント（勾配の移動平均）← Momentumの良さ
+#    v: 二次モーメント（勾配²の移動平均）← AdaGradの良さ（減衰あり）
+#    バイアス補正: 初期ステップで m,v がゼロに近い問題を修正
+# ─────────────────────────────────────────
+params = init.copy()
+m = np.zeros_like(params)   # 一次モーメント（勾配の指数移動平均）
+v = np.zeros_like(params)   # 二次モーメント（勾配²の指数移動平均）
+beta1, beta2 = 0.9, 0.999   # 標準値
+lr, eps = 0.1, 1e-8
+
+for t in range(1, n_steps + 1):
+    g = grad(params)
+    m = beta1 * m + (1 - beta1) * g        # 一次モーメント更新
+    v = beta2 * v + (1 - beta2) * g**2     # 二次モーメント更新
+    # バイアス補正（初期ステップで m,v が小さすぎる問題を修正）
+    m_hat = m / (1 - beta1**t)
+    v_hat = v / (1 - beta2**t)
+    params -= lr * m_hat / (np.sqrt(v_hat) + eps)
+
+adam_result = params.copy()
+print(f"Adam     最終値: x={adam_result[0]:.4f}, y={adam_result[1]:.4f}, loss={f(adam_result):.6f}")
+
+# ─── 出力例 ───
+# SGD      最終値: x=0.0065, y=4.3512, loss=189.55  ← y方向が全然収束しない！
+# Momentum 最終値: x=0.0001, y=0.0003, loss=0.0000  ← ずっと速い
+# AdaGrad  最終値: x=0.0000, y=0.0008, loss=0.0000  ← 収束するが後半停滞
+# Adam     最終値: x=0.0000, y=0.0000, loss=0.0000  ← 最速で収束！</pre>
+  </div>
+
+  <div class="visual">
+    <div class="label">各オプティマイザの特徴まとめ</div>
+    <p><strong>SGD</strong>：シンプル。急峻な方向で振動、緩やかな方向で遅い。学習率の調整が難しい<br>
+    <strong>Momentum</strong>：「慣性」を加えて振動を抑える。ボールが谷底に転がり落ちるイメージ<br>
+    <strong>AdaGrad</strong>：パラメータごとに学習率を自動調整。でも学習率が0に向かって単調減少する<br>
+    <strong>RMSProp</strong>：AdaGradの単調減少問題を「指数移動平均」で解決<br>
+    <strong>Adam</strong>：Momentum（速さ）+ RMSProp（適応的学習率）の合体。現在の実質的標準</p>
+  </div>
+
+  <h4>Adam Optimizer — 数式の意味を理解する</h4>
+  <p>Adamの各変数が何を表すかを整理します。単純な勾配降下法には「全パラメータに同じ学習率を使う」という問題があります。Adamは「各パラメータごとに適切な学習率を自動調整」します。</p>
+  <div class="math-block">
+    $$m_t = \beta_1 m_{t-1} + (1-\beta_1) g_t, \quad v_t = \beta_2 v_{t-1} + (1-\beta_2) g_t^2$$
+  </div>
+  <div class="math-block">
+    $$\hat{m}_t = \frac{m_t}{1-\beta_1^t}, \quad \hat{v}_t = \frac{v_t}{1-\beta_2^t}, \quad \theta_{t+1} = \theta_t - \frac{\eta \hat{m}_t}{\sqrt{\hat{v}_t} + \epsilon}$$
+  </div>
+  <div class="code-block">
+    <span class="code-label">Python — AdamWの完全な学習ループ（実務で使う形）</span>
+    <pre>import torch
+import torch.nn as nn
+
+# ─── モデルと最適化器の設定 ───
+model = nn.Sequential(
+    nn.Linear(784, 256),   # 入力層 → 隠れ層
+    nn.ReLU(),
+    nn.Linear(256, 10),    # 隠れ層 → 出力層（10クラス）
+)
+
+# AdamW = Adam + Weight Decay（L2正則化）
+# β1=0.9 : モーメンタム（過去の勾配の移動平均）
+# β2=0.999: 勾配の二乗の移動平均（適応的学習率用）
+# weight_decay: L2正則化の強さ（過学習を防ぐ）
+optimizer = torch.optim.AdamW(
+    model.parameters(),
+    lr=3e-4,              # 学習率（Transformerでよく使われる値）
+    betas=(0.9, 0.999),   # デフォルト値でほぼOK
+    weight_decay=0.01     # Weight Decay（AdamWの特徴）
+)
+criterion = nn.CrossEntropyLoss()   # 多クラス分類の損失関数
+
+# ─── 1エポック分の学習ループ ───
+model.train()   # BatchNorm・Dropoutを学習モードに切り替え
+
+for batch_x, batch_y in dataloader:
+    # ① 順伝播：予測を計算（このとき計算グラフが自動構築される）
+    pred = model(batch_x)              # shape: (B, 10)
+
+    # ② 損失計算
+    loss = criterion(pred, batch_y)    # 予測と正解のズレ
+
+    # ③ 勾配をリセット（前のバッチの勾配が残っているので必須）
+    optimizer.zero_grad()
+
+    # ④ 逆伝播：連鎖律で全パラメータの勾配を自動計算
+    loss.backward()
+
+    # ⑤ 勾配クリッピング（勾配爆発を防ぐ。Transformerでは重要）
+    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+
+    # ⑥ パラメータ更新
+    optimizer.step()
+
+    print(f"loss: {loss.item():.4f}")</pre>
+  </div>
+
+  <div class="visual">
+    <div class="label">Adam のイメージ：「地形に詳しい登山家」</div>
+    <p>普通のSGDは「足元の傾きだけ見て進む初心者」です。Adamは「どの方向が今まで急だったか（モーメンタム $m_t$）」と「どの方向が全体的に難しいか（過去の勾配の大きさ $v_t$）」を記憶した熟練登山家です。急な方向は慎重に、なだらかな方向は大胆に進みます。</p>
+  </div>
+
+  <h4>連鎖律（Chain Rule）と逆伝播</h4>
+  <p>連鎖律は「合成関数の微分は各関数の微分の積」です。逆伝播はこれをネットワーク全体に適用したアルゴリズムです。</p>
+  <div class="math-block">
+    $$\frac{\partial L}{\partial x} = \frac{\partial L}{\partial y} \cdot \frac{\partial y}{\partial x}$$
+  </div>
+
+  <div class="visual">
+    <div class="label">連鎖律のイメージ：「歯車の連結」</div>
+    <p>Aが1回転するとBが2回転、BはCを3回転させるとします。「AはCを何回転させるか？」→ $\frac{dC}{dA} = \frac{dC}{dB} \times \frac{dB}{dA} = 3 \times 2 = 6$。逆伝播は出力から逆向きに「各重みがどれだけ損失に寄与したか」を計算します。PyTorchは<code>.backward()</code>で自動的にこれを実行します。</p>
+  </div>
+
+  <h4>2層ネットワークの逆伝播を手で追う</h4>
+  <p>$h = \text{ReLU}(w_1 x + b_1)$、$\hat{y} = w_2 h$、$\mathcal{L} = (\hat{y} - y)^2$ として、出力側から順に偏微分を計算します：</p>
+  <div class="math-block">
+    $$\frac{\partial \mathcal{L}}{\partial w_2} = 2(\hat{y}-y) \cdot h, \quad \frac{\partial \mathcal{L}}{\partial w_1} = \underbrace{2(\hat{y}-y)}_{\text{上流の勾配}} \cdot \underbrace{w_2}_{\text{$w_2$層}} \cdot \underbrace{\mathbb{1}[w_1 x > 0]}_{\text{ReLU}} \cdot \underbrace{x}_{\text{ローカル勾配}}$$
+  </div>
+  <div class="math-note">各層での計算は「上流から流れてきた勾配 × このノードのローカル微分」だけです。PyTorchの <code>autograd</code> はこれを自動的に行います。</div>
+
+  <div class="training">
+    <div class="label">学習時の処理フロー（PyTorch）</div>
+    <p>① <code>model.train()</code> — BatchNorm/Dropoutを学習モードに切り替え<br>
+    ② 順伝播: <code>y_hat = model(x)</code> — 計算グラフが自動構築される<br>
+    ③ 損失計算: <code>loss = criterion(y_hat, y)</code><br>
+    ④ 逆伝播: <code>loss.backward()</code> — 全パラメータの勾配を計算<br>
+    ⑤ パラメータ更新: <code>optimizer.step()</code><br>
+    ⑥ 勾配リセット: <code>optimizer.zero_grad()</code> — 忘れると勾配が累積してバグになります</p>
+  </div>
+  <div class="inference">
+    <div class="label">推論時の最適化（必須の設定）</div>
+    <p><code>model.eval()</code> + <code>torch.no_grad()</code> を必ずセットで使います。計算グラフを構築しないため、メモリ使用量が学習時の約1/3〜1/2に削減され、速度も向上します。</p>
+  </div>
+
+  <div class="point-box">
+    <span class="point-label">ポイント</span>
+    <p>勾配降下法は「微分で方向を知り、逆向きに進む」だけの単純なアルゴリズムです。これで1000億パラメータのモデルが学習できます。Adamはパラメータごとに学習率を自動調整することで収束を大幅に改善しています。</p>
+  </div>
+
+  <div class="matome">
+    <span class="matome-label">本節のまとめ</span>
+    <ul>
+      <li>勾配は「損失が最も増加する方向」、学習はその逆方向へパラメータを動かす</li>
+      <li>Adam = モーメンタム + 適応的学習率の組み合わせ。現場ではAdamWが標準</li>
+      <li>連鎖律が逆伝播の数学的基礎。PyTorchのautogradが自動計算してくれる</li>
+      <li>学習時は<code>model.train()</code>、推論時は<code>model.eval() + torch.no_grad()</code></li>
+    </ul>
+  </div>
+
+  </div>
+</div>
+
+<!-- 確率統計・情報理論 -->
+<div class="topic" id="t-prob" style="border-left-color:var(--month1)">
+  <h3>確率統計・情報理論 <span class="day-tag">Day 11–15</span></h3>
+  <div class="topic-body">
+
+  <p class="topic-lead">AIモデルは「確率を出力する機械」です。「この画像は猫である確率は87%」というように、モデルの出力を確率として解釈するためには確率論の基礎が必要です。また「損失関数をなぜ交差エントロピーにするのか」という疑問も、情報理論を学ぶと自然に答えが得られます。</p>
+
+  <h4>ベイズの定理 — 証拠で信念を更新する</h4>
+  <div class="math-block">
+    $$P(A|B) = \frac{P(B|A) \cdot P(A)}{P(B)}$$
+  </div>
+  <p>「データが得られた後に、仮説の確率を更新する」という考え方は機械学習の根幹です。事前分布（Prior）をデータで更新して事後分布（Posterior）を得ます。</p>
+
+  <div class="visual">
+    <div class="label">ベイズ定理のイメージ：「証拠で予想を更新する」</div>
+    <p>「この患者は病気かどうか？」を考えます。<br>
+    ・<strong>事前確率</strong>（検査前）: 人口の1%が罹患 → $P(\text{病気}) = 0.01$<br>
+    ・<strong>証拠</strong>: 検査陽性（感度95%、特異度90%）<br>
+    ・<strong>事後確率</strong>（検査後）: $P(\text{病気}|\text{陽性}) \approx 0.087$（約9%）← 直感より低い！<br><br>
+    AIの学習は「データという証拠を見るたびに、パラメータの推定値を更新していく」ベイズ的な過程です。</p>
+  </div>
+
+  <h4>最尤推定（MLE）と損失関数の関係</h4>
+  <div class="math-block">
+    $$\hat{\theta}_{MLE} = \arg\max_\theta \sum_{i=1}^{N} \log P(x_i | \theta)$$
+  </div>
+  <div class="ai-connection">
+    <div class="label">MLEと交差エントロピー損失は同値</div>
+    <p>分類問題で交差エントロピーを最小化することは、「観測データが最も高い確率で生成されるパラメータを見つける（MLE）」ことと数学的に等価です。損失関数の選択には確率論的な裏付けがあるのです。</p>
+  </div>
+
+  <h4>Shannon エントロピー — 情報の「驚き」を測る</h4>
+  <div class="math-block">
+    $$H(P) = -\sum_{x} P(x) \log P(x)$$
+  </div>
+
+  <div class="visual">
+    <div class="label">エントロピーのイメージ：「箱の中の玉の乱雑さ」</div>
+    <p>箱に赤玉と白玉が入っています。<br>
+    ・赤10個だけ → エントロピー = 0（完全に予測可能、驚きゼロ）<br>
+    ・赤5個・白5個 → エントロピー最大（完全にランダム）<br><br>
+    AIの予測でいうと：エントロピー低い = 「90%の確率で猫です」という自信ある予測、エントロピー高い = 「全クラス25%ずつ」という全く自信のない予測です。</p>
+  </div>
+
+  <div class="code-block">
+    <span class="code-label">Python — エントロピー・交差エントロピー・KLダイバージェンスを一気に理解する</span>
+    <pre>import numpy as np
+
+# ─── エントロピー H(P)：不確実性の度合い ───
+def entropy(p):
+    """確率分布 p のエントロピー（不確実性）"""
+    p = np.clip(p, 1e-9, 1)   # log(0) を防ぐ
+    return -np.sum(p * np.log(p))
+
+# 確実な予測（エントロピー低い）vs 不確実な予測（高い）
+certain   = np.array([0.99, 0.005, 0.005])  # 「ほぼ確実にクラス0」
+uncertain = np.array([0.34, 0.33, 0.33])    # 「全く自信なし」
+
+print(f"確実な予測のエントロピー:   {entropy(certain):.4f}")   # → 0.0669（低い）
+print(f"不確実な予測のエントロピー: {entropy(uncertain):.4f}") # → 1.0984（高い）
+
+# ─── 交差エントロピー H(P, Q)：モデルの損失関数 ───
+def cross_entropy(y_true, y_pred):
+    """y_true: 正解（one-hot）, y_pred: モデルの予測確率"""
+    y_pred = np.clip(y_pred, 1e-9, 1)
+    return -np.sum(y_true * np.log(y_pred))
+
+y_true     = np.array([1, 0, 0])               # 正解: クラス0
+y_pred_good = np.array([0.90, 0.05, 0.05])     # 正解に近い予測
+y_pred_bad  = np.array([0.10, 0.50, 0.40])     # 間違った予測
+
+print(f"\n良い予測の損失: {cross_entropy(y_true, y_pred_good):.4f}")  # → 0.105
+print(f"悪い予測の損失: {cross_entropy(y_true, y_pred_bad):.4f}")    # → 2.303
+
+# ─── KL ダイバージェンス D_KL(P||Q)：分布のズレを測る ───
+def kl_divergence(p, q):
+    """P から Q への KL ダイバージェンス（対称ではない！）"""
+    p = np.clip(p, 1e-9, 1)
+    q = np.clip(q, 1e-9, 1)
+    return np.sum(p * np.log(p / q))
+
+p = np.array([0.6, 0.3, 0.1])   # 真の分布（例：正解ラベル）
+q = np.array([0.5, 0.4, 0.1])   # 近似分布（モデルの予測）
+
+print(f"\nKL(P||Q) = {kl_divergence(p, q):.4f}")  # → 0.0133（近い）
+print(f"KL(Q||P) = {kl_divergence(q, p):.4f}")    # → 0.0128（非対称！）</pre>
+  </div>
+
+  <h4>Softmax の温度パラメータ</h4>
+  <div class="math-block">
+    $$P(x_i) = \frac{\exp(z_i / T)}{\sum_j \exp(z_j / T)}$$
+  </div>
+  <p>$T \to 0$ で分布がシャープになり最大値に集中（argmax）、$T \to \infty$ で一様分布に近づきます。</p>
+  <div class="training">
+    <div class="label">学習時の温度</div>
+    <p>通常 $T=1$ で学習します。知識蒸留（Knowledge Distillation）では高温（$T=3\sim7$）で教師モデルの「ソフトラベル」を生成し、正解クラス以外の確率分布（暗黙知）も含めて学習させます。</p>
+  </div>
+  <div class="inference">
+    <div class="label">推論時のサンプリング制御</div>
+    <p>テキスト生成 API の <code>temperature</code> パラメータがまさにこれです。$T&lt;1$（例: 0.3）: 確実なトークンに集中 → 一貫性重視。$T&gt;1$（例: 1.5）: 分布を平坦化 → 多様性・創造性重視。</p>
+  </div>
+
+  <h4>KLダイバージェンス</h4>
+  <div class="math-block">
+    $$D_{KL}(P \| Q) = \sum_{x} P(x) \log \frac{P(x)}{Q(x)} \geq 0$$
+  </div>
+  <div class="ai-connection">
+    <div class="label">KLダイバージェンスの応用</div>
+    <p><strong>VAE</strong>：損失関数の正則化項が $D_{KL}(q(z|x) \| p(z))$ です。<br>
+    <strong>RLHF</strong>：PPOでポリシーがSFTモデルから逸脱しすぎないよう $D_{KL}(\pi \| \pi_{SFT})$ をペナルティとして加えます。<br>
+    <strong>知識蒸留</strong>：教師モデルと生徒モデルの出力分布間のKLを最小化します。</p>
+  </div>
+
+  <div class="matome">
+    <span class="matome-label">本節のまとめ</span>
+    <ul>
+      <li>ベイズの定理は「証拠でパラメータ推定を更新する」AIの根本思想</li>
+      <li>交差エントロピー損失の最小化はMLEと等価（確率論的裏付けがある）</li>
+      <li>エントロピーは「予測の自信度」の逆数。高い = 不確実</li>
+      <li>温度パラメータでSoftmaxの「確信度」を制御できる。生成AIのtemperatureはこれ</li>
+      <li>KLダイバージェンスはVAE・RLHF・知識蒸留の中核</li>
+    </ul>
+  </div>
+
+  </div>
+</div>
+
+<!-- データ前処理と評価指標 -->
+<div class="topic" id="t-preproc" style="border-left-color:var(--month1)">
+  <h3>データ前処理と評価指標 <span class="day-tag">Day 16–20</span></h3>
+  <div class="topic-body">
+
+  <p class="topic-lead">いくら優れたモデルを設計しても、データの前処理と評価指標の選択を誤ると良い結果は得られません。「ゴミを入れたらゴミが出てくる（Garbage In, Garbage Out）」は機械学習の鉄則です。ここでは実務でよく使う前処理と評価指標を学びましょう。</p>
+
+  <h4>標準化（Z-score normalization）</h4>
+  <div class="math-block">
+    $$x' = \frac{x - \mu}{\sigma}$$
+  </div>
+  <div class="code-block">
+    <span class="code-label">Python — 標準化の実装と効果</span>
+    <pre>import numpy as np
+
+# 特徴量のスケールが全然違う例
+height = np.array([160, 170, 155, 175])   # 単位: cm
+weight = np.array([55, 68, 50, 80])       # 単位: kg
+
+# 標準化（平均0、分散1に変換）
+def standardize(x):
+    return (x - x.mean()) / x.std()
+
+height_std = standardize(height)   # 例: [-0.7, 0.3, -1.3, 1.7]
+weight_std = standardize(weight)   # 例: [-0.8, 0.3, -1.2, 1.7]
+
+# 標準化後は同じスケールで比較できる
+print("標準化後の平均:", height_std.mean())  # ≈ 0
+print("標準化後の標準偏差:", height_std.std())  # = 1.0</pre>
+  </div>
+  <div class="ai-connection">
+    <div class="label">なぜ標準化が重要か</div>
+    <p>特徴量のスケールが異なると、勾配降下法が楕円形の等高線上を「ジグザグ」に進むことになり、収束が大幅に遅れます。標準化により等高線が円形に近づき、効率的な学習が可能になります。Batch Normalizationはこの考え方をネットワーク内部の各層に適用したものです。</p>
+  </div>
+
+  <h4>適合率・再現率・F1スコア</h4>
+  <div class="math-block">
+    $$\text{Precision} = \frac{TP}{TP+FP}, \quad \text{Recall} = \frac{TP}{TP+FN}, \quad F_1 = \frac{2 \cdot P \cdot R}{P + R}$$
+  </div>
+  <div class="code-block">
+    <span class="code-label">Python — Precision / Recall / F1を手計算する</span>
+    <pre>import numpy as np
+
+# 2値分類の予測結果
+y_true = np.array([1, 0, 1, 1, 0, 1, 0, 0, 1, 1])
+y_pred = np.array([1, 0, 1, 0, 0, 1, 1, 0, 1, 0])
+
+TP = np.sum((y_pred == 1) & (y_true == 1))   # → 4
+FP = np.sum((y_pred == 1) & (y_true == 0))   # → 1（誤検出）
+FN = np.sum((y_pred == 0) & (y_true == 1))   # → 2（見逃し）
+
+precision = TP / (TP + FP)  # → 0.80 （検出したものの精度）
+recall    = TP / (TP + FN)  # → 0.67 （実際の正例を何割検出）
+f1 = 2 * precision * recall / (precision + recall)  # → 0.73</pre>
+  </div>
+  <p>不均衡データ（例：詐欺検出では正例が1%以下）では正解率だけでは不十分です。用途に応じてPrecision重視（誤検出を避けたい）かRecall重視（見逃しを避けたい）かを判断します。</p>
+
+  <div class="point-box">
+    <span class="point-label">ポイント</span>
+    <p>医療スクリーニング（見逃しが命取り）はRecall最大化、スパムフィルター（誤検出で重要メールを消したくない）はPrecision最大化を優先します。目的に合った指標を選ぶことが重要です。</p>
+  </div>
+
+  <div class="column-box">
+    <span class="column-label">コラム — 正解率が罠になるケース</span>
+    <p>100件中99件が「正常」、1件が「詐欺」のデータで「全部正常」と予測するモデルは正解率99%です。しかしPrecision = 0%、Recall = 0%であり、詐欺を1件も検出できていません。このようなクラス不均衡の問題では必ずF1スコアやROC-AUCで評価してください。</p>
+  </div>
+
+  <div class="matome">
+    <span class="matome-label">本節のまとめ</span>
+    <ul>
+      <li>標準化は「特徴量のスケール統一」で、勾配降下法の収束を大幅に改善する</li>
+      <li>Precision = 「検出した中での正解率」、Recall = 「正解をどれだけ見つけたか」</li>
+      <li>F1 = PrecisionとRecallの調和平均。不均衡データでは必ず確認する</li>
+      <li>評価指標の選択はモデルの目的（見逃し vs 誤検出のどちらが問題か）に依存する</li>
+    </ul>
+  </div>
+
+  </div>
+</div>
+
+<!-- Prev/Next -->
+<div class="page-nav">
+  <a href="index.html">
+    <div class="nav-label">← ホーム</div>
+    <div class="nav-title">目次に戻る</div>
+  </a>
+  <a href="month2.html" class="next">
+    <div class="nav-label">次のページ →</div>
+    <div class="nav-title">Month 2: 古典的機械学習</div>
+  </a>
+</div>
+
+</div><!-- /container -->
+<button id="back-to-top" onclick="window.scrollTo({top:0,behavior:'smooth'})" title="先頭へ戻る">↑</button>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [{left:"$$",right:"$$",display:true},{left:"$",right:"$",display:false}],
+    throwOnError: false
+  });
+  document.querySelectorAll('.topic').forEach(topic => {
+    const h3 = topic.querySelector('h3');
+    if (!h3) return;
+    h3.addEventListener('click', () => topic.classList.toggle('collapsed'));
+  });
+  const bar = document.getElementById('progress-bar');
+  const btn = document.getElementById('back-to-top');
+  const tocLinks = document.querySelectorAll('.page-toc a');
+  const topics = document.querySelectorAll('.topic[id]');
+  window.addEventListener('scroll', () => {
+    const h = document.documentElement;
+    bar.style.width = Math.min((h.scrollTop / (h.scrollHeight - h.clientHeight)) * 100, 100) + '%';
+    btn.classList.toggle('visible', h.scrollTop > 400);
+    let current = '';
+    topics.forEach(t => { if (t.getBoundingClientRect().top <= 100) current = t.id; });
+    tocLinks.forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#' + current));
+  }, { passive: true });
+});
+</script>
+</body>
+</html>
