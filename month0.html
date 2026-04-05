@@ -1,0 +1,1140 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Month 0: AIの学習と推論の全体像 — AI学習参考資料</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
+<link rel="stylesheet" href="ai_math_style.css">
+<style>
+:root { --month0: #38bdf8; }
+
+/* ── Month0 Flowchart ── */
+.flow-wrap {
+  padding: 8px 0;
+}
+.flow-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+}
+.flow-box {
+  background: var(--surface2);
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 22px;
+  min-width: 220px;
+  max-width: 340px;
+  width: 100%;
+  text-align: center;
+  position: relative;
+}
+.flow-box .fb-step {
+  font-size: 0.62rem;
+  color: var(--text-dim);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+.flow-box .fb-title {
+  font-size: 1rem;
+  font-weight: 600;
+}
+.flow-box .fb-sub {
+  font-size: 0.76rem;
+  color: var(--text-dim);
+  margin-top: 6px;
+  line-height: 1.6;
+}
+.flow-badge {
+  display: inline-block;
+  font-size: 0.6rem;
+  font-weight: 700;
+  padding: 2px 10px;
+  border-radius: 10px;
+  margin-top: 8px;
+  letter-spacing: 0.06em;
+}
+.flow-arrow {
+  font-size: 1.6rem;
+  color: var(--text-dim);
+  line-height: 1.1;
+  padding: 4px 0;
+  text-align: center;
+  width: 100%;
+  display: block;
+}
+.flow-loop-wrap {
+  border: 2px dashed var(--border);
+  border-radius: 14px;
+  padding: 18px 20px;
+  width: 100%;
+  position: relative;
+  margin: 4px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+}
+.flow-loop-label {
+  position: absolute;
+  top: -11px; left: 16px;
+  background: var(--bg);
+  padding: 0 8px;
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  font-style: italic;
+  letter-spacing: 0.04em;
+}
+
+/* box color variants */
+.bm0 { border-color: var(--month0); }
+.bm0 .flow-badge { background: rgba(56,189,248,0.12); color: var(--month0); }
+.bm1 { border-color: var(--month1); }
+.bm1 .flow-badge { background: rgba(74,144,217,0.13); color: var(--month1); }
+.bm2 { border-color: var(--month2); }
+.bm2 .flow-badge { background: rgba(80,184,122,0.13); color: var(--month2); }
+.bm3 { border-color: var(--month3); }
+.bm3 .flow-badge { background: rgba(232,131,58,0.13); color: var(--month3); }
+.bm4 { border-color: var(--month4); }
+.bm4 .flow-badge { background: rgba(217,74,92,0.13); color: var(--month4); }
+.bm5 { border-color: var(--month5); }
+.bm5 .flow-badge { background: rgba(155,89,182,0.13); color: var(--month5); }
+.bm6 { border-color: var(--month6); }
+.bm6 .flow-badge { background: rgba(224,95,160,0.13); color: var(--month6); }
+.bdata { border-color: var(--accent3); }
+.bdata .flow-badge { background: rgba(108,255,168,0.1); color: var(--accent3); }
+.bout { border-color: var(--accent4); }
+.bout .flow-badge { background: rgba(255,196,108,0.12); color: var(--accent4); }
+
+/* ── Phase comparison grid ── */
+.phase-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin: 18px 0;
+}
+.phase-card {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px 22px;
+}
+.phase-card .pt {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.phase-card ul { list-style: none; padding: 0; margin: 0; }
+.phase-card ul li {
+  padding: 4px 0 4px 18px;
+  position: relative;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  line-height: 1.7;
+}
+.phase-card ul li::before { content: "›"; position: absolute; left: 2px; color: var(--accent1); font-weight: 700; }
+
+/* ── Middle-school callout ── */
+.ms-box {
+  background: rgba(56,189,248,0.06);
+  border: 1px solid rgba(56,189,248,0.22);
+  border-radius: 8px;
+  padding: 15px 18px 15px 48px;
+  margin: 16px 0;
+  position: relative;
+  line-height: 1.9;
+  font-size: 0.9rem;
+}
+.ms-box::before { content: "🏫"; position: absolute; left: 14px; top: 16px; }
+.ms-box .ms-label { font-weight: 600; color: var(--month0); font-size: 0.8rem; margin-bottom: 4px; letter-spacing: 0.05em; }
+
+/* ── Horizontal flow (LLM stages) ── */
+.hflow {
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+  overflow-x: auto;
+  padding: 10px 0 16px;
+}
+.hflow-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 150px;
+  flex-shrink: 0;
+}
+.hflow-box {
+  background: var(--surface2);
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 12px;
+  width: 140px;
+  text-align: center;
+  font-size: 0.78rem;
+}
+.hflow-box .ht { font-weight: 700; font-size: 0.85rem; margin-bottom: 6px; }
+.hflow-box .hd { color: var(--text-dim); line-height: 1.5; font-size: 0.72rem; }
+.hflow-box .hb { margin-top: 8px; }
+.hflow-arrow {
+  color: var(--text-dim);
+  font-size: 1.3rem;
+  padding: 0 2px;
+  margin-top: 30px;
+  flex-shrink: 0;
+}
+
+/* ── Curriculum map ── */
+.curr-map {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin: 18px 0;
+}
+.curr-node {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+.curr-node .cn-title {
+  font-weight: 600;
+  font-size: 0.82rem;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.curr-node .cn-items {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  line-height: 1.85;
+}
+.curr-node .cn-use {
+  font-size: 0.72rem;
+  margin-top: 8px;
+  font-style: italic;
+  color: var(--accent4);
+  opacity: 0.85;
+}
+
+/* ── Two-column layout (side by side flows) ── */
+.twin-flow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin: 16px 0;
+}
+.twin-flow-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.twin-col-title {
+  font-size: 0.88rem;
+  font-weight: 600;
+  margin-bottom: 12px;
+  padding: 6px 18px;
+  border-radius: 20px;
+  text-align: center;
+}
+
+/* ── Responsive ── */
+@media (max-width: 700px) {
+  .phase-grid { grid-template-columns: 1fr; }
+  .curr-map { grid-template-columns: 1fr 1fr; }
+  .twin-flow { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<div id="progress-bar"></div>
+<div class="container">
+
+<nav class="site-nav">
+  <a href="index.html">🏠 ホーム</a>
+  <span class="sep">/</span>
+  <a href="month0.html" class="current">Month 0</a>
+  <span class="sep">/</span>
+  <a href="month1.html">Month 1</a>
+  <span class="sep">/</span>
+  <a href="month2.html">Month 2</a>
+  <span class="sep">/</span>
+  <a href="month3.html">Month 3</a>
+  <span class="sep">/</span>
+  <a href="month4.html">Month 4</a>
+  <span class="sep">/</span>
+  <a href="month5.html">Month 5</a>
+  <span class="sep">/</span>
+  <a href="month6.html">Month 6</a>
+</nav>
+
+<div class="page-header">
+  <span class="month-badge" style="background:var(--month0);color:#000;">MONTH 0</span>
+  <h1>AIの学習と推論の全体像</h1>
+</div>
+
+<div class="ms-box" style="margin-bottom:30px;">
+  <div class="ms-label">このページについて</div>
+  このサイトで学ぶ数学や技術が「AIのどの部分で使われるのか」を最初に理解しておくためのページです。中学生でもわかるよう、できるかぎり身近な言葉で説明します。Month 1〜6 の内容がどこに接続するかも示しているので、勉強に詰まったときにここに戻ってきて「今どこを学んでいるのか」を確認してください。
+</div>
+
+<div class="page-toc">
+  <h3>このページの内容</h3>
+  <a href="#what-is-ai">① AIとは何か？</a>
+  <a href="#two-phases">② 学習フェーズ vs 推論フェーズ</a>
+  <a href="#training-flow">③ AIの学習フロー（全体図）</a>
+  <a href="#inference-flow">④ AIの推論フロー（全体図）</a>
+  <a href="#llm-flow">⑤ ChatGPT系（LLM）の学習3ステージ</a>
+  <a href="#image-flow">⑥ 画像認識AIの学習・推論フロー</a>
+  <a href="#diffusion-flow">⑦ 画像生成AI（Diffusion）の推論フロー</a>
+  <a href="#curr-map">⑧ このカリキュラムとAIの対応マップ</a>
+  <a href="#why-math">⑨ なぜ数学が必要なのか？</a>
+</div>
+
+<!-- ======================================================
+     ① AIとは何か
+====================================================== -->
+<div class="topic" id="what-is-ai" style="border-left-color:var(--month0)">
+  <h3>① AIとは何か？</h3>
+  <div class="topic-body">
+
+  <div class="ms-box">
+    <div class="ms-label">中学生向けのひとこと説明</div>
+    AIとは「大量の例題（データ）を見せることで、コンピュータ自身がパターンを見つけて学習するプログラム」です。たとえば100万枚の犬・猫の写真を見せれば、「犬らしさ・猫らしさ」を自動で学び、新しい写真を見ても判定できるようになります。人間がルールを書くのではなく、データからルールを自動で発見させるのがAIの本質です。
+  </div>
+
+  <h4>ニューラルネットワーク = 脳を真似た計算ネットワーク</h4>
+  <p>人間の脳は約860億個のニューロン（神経細胞）がつながったネットワークです。AIの「ニューラルネットワーク」はこれを数学的に模したもので、多数の「ノード（人工ニューロン）」と、それをつなぐ「重み（weight）」で構成されます。</p>
+
+  <div class="ms-box">
+    <div class="ms-label">身近なたとえ</div>
+    <strong>AIの重み（weight）＝ 人間の記憶・経験</strong><br>
+    料理を練習するたびに「塩を少し減らすとおいしい」と学ぶように、AIも大量のデータを処理するたびに「重み」を少しずつ調整して賢くなっていきます。この調整のプロセスが「学習（Training）」、学んだAIを実際に使うプロセスが「推論（Inference）」です。
+  </div>
+
+  <p>現代のAIは「深層学習（Deep Learning）」と呼ばれる手法を使います。ニューラルネットワークの層（レイヤー）を何十〜何千層も積み重ねることで、画像・音声・テキストなど複雑なデータを扱えるようになりました。ChatGPTのようなLLM（大規模言語モデル）はその代表例です。</p>
+
+  <div class="insight">
+    <p>このカリキュラムで扱う6ヵ月分の内容（線形代数・微分・確率・NN・CNN・Transformer・生成モデル・強化学習）は、すべてこのニューラルネットワークの「設計・学習・推論」のどこかに直接使われる技術です。</p>
+  </div>
+
+  </div><!-- /topic-body -->
+</div>
+
+<!-- ======================================================
+     ② 学習 vs 推論
+====================================================== -->
+<div class="topic" id="two-phases" style="border-left-color:var(--month0)">
+  <h3>② 学習フェーズ vs 推論フェーズ</h3>
+  <div class="topic-body">
+
+  <div class="ms-box">
+    <div class="ms-label">中学生向けのひとこと説明</div>
+    <strong>学習フェーズ</strong>は「勉強」、<strong>推論フェーズ</strong>は「テスト本番」です。<br>
+    勉強中は答え合わせができますが、本番では答えなしで問題を解きます。AIも同様に、学習時は「正解データ」と比べながら自分を修正し、推論時は「学んだ知識だけ」で答えを出します。
+  </div>
+
+  <div class="phase-grid">
+    <div class="phase-card">
+      <div class="pt" style="color:var(--accent5)">🔄 学習フェーズ（Training）</div>
+      <ul>
+        <li>大量の「入力データ＋正解ラベル」を使用</li>
+        <li>AIの予測と正解の差（損失）を計算</li>
+        <li>誤差逆伝播法で勾配（改善方向）を計算</li>
+        <li>オプティマイザ（Adam等）で重みを更新</li>
+        <li>これを何万〜何百万回繰り返す</li>
+        <li>GPUの大量計算が必要（数日〜数ヵ月）</li>
+        <li>メモリに勾配情報を保存する必要あり</li>
+      </ul>
+    </div>
+    <div class="phase-card">
+      <div class="pt" style="color:var(--accent4)">🚀 推論フェーズ（Inference）</div>
+      <ul>
+        <li>学習済みの重みを固定して使用</li>
+        <li>入力データを与えると答えが返ってくる</li>
+        <li>勾配計算は不要（高速・省メモリ）</li>
+        <li>スマホやPCでもリアルタイムに動作可能</li>
+        <li>量子化・蒸留で軽量化できる</li>
+        <li>KVキャッシュ等で高速化できる</li>
+        <li>ChatGPTに質問するのがこのフェーズ</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="ai-connection">
+    <div class="label">⚡ コード上の違い（PyTorch）</div>
+    学習時：<code>loss.backward()</code>（勾配を計算・保存）<br>
+    推論時：<code>with torch.no_grad():</code>（勾配計算をスキップ）<br>
+    → この違いが処理速度・メモリ使用量に大きく影響します。
+  </div>
+
+  </div>
+</div>
+
+<!-- ======================================================
+     ③ AIの学習フロー（全体図）
+====================================================== -->
+<div class="topic" id="training-flow" style="border-left-color:var(--accent5)">
+  <h3>③ AIの学習フロー（全体図）</h3>
+  <div class="topic-body">
+
+  <p class="topic-lead">AIの学習は「データを見て → 予測して → 正解と比較して → 修正する」という繰り返しです。以下のフローチャートでは、各ステップがこのカリキュラムのどのMonthで学ぶ内容に対応するかも示しています。</p>
+
+  <div class="flow-wrap">
+    <div class="flow-col">
+
+      <!-- Step 1 -->
+      <div class="flow-box bdata">
+        <div class="fb-step">Step 1</div>
+        <div class="fb-title">📦 生データ収集</div>
+        <div class="fb-sub">画像・テキスト・音声・センサー値など<br>大量のデータを集める</div>
+        <span class="flow-badge">前提知識（Month 0）</span>
+      </div>
+      <span class="flow-arrow">↓</span>
+
+      <!-- Step 2 -->
+      <div class="flow-box bm1">
+        <div class="fb-step">Step 2</div>
+        <div class="fb-title">🔧 データ前処理</div>
+        <div class="fb-sub">
+          正規化・標準化（スケール統一）<br>
+          欠損値の補完、外れ値除去<br>
+          Train / Val / Test の分割<br>
+          カテゴリ変数のエンコーディング
+        </div>
+        <span class="flow-badge">Month 1 · Day 16–20</span>
+      </div>
+      <span class="flow-arrow">↓</span>
+
+      <!-- Step 3 -->
+      <div class="flow-box bm1" style="border-color:var(--month2)">
+        <div class="fb-step">Step 3</div>
+        <div class="fb-title">🏗️ モデル設計</div>
+        <div class="fb-sub">
+          どの種類のモデルを使うか選ぶ<br>
+          線形回帰 → CNN → Transformer …<br>
+          層の数・幅・活性化関数を決定<br>
+          重みの初期化方法を選択
+        </div>
+        <span class="flow-badge" style="background:rgba(80,184,122,0.13);color:var(--month2)">Month 2〜5（モデルの種類による）</span>
+      </div>
+      <span class="flow-arrow">↓</span>
+
+      <!-- Loop start -->
+      <div class="flow-loop-wrap">
+        <div class="flow-loop-label">⟳ エポック × バッチ数 回繰り返す（数千〜数百万回）</div>
+
+        <!-- Step 4 -->
+        <div class="flow-box bm3" style="margin-top:8px;">
+          <div class="fb-step">Step 4</div>
+          <div class="fb-title">➡️ 順伝播（Forward Pass）</div>
+          <div class="fb-sub">
+            入力データをネットワークに通す<br>
+            各層で「行列積 + 活性化関数」を計算<br>
+            → 最終的に「予測値（ŷ）」が出力される
+          </div>
+          <span class="flow-badge">Month 3 · Day 43–52 ／ Month 1（行列積）</span>
+        </div>
+        <span class="flow-arrow">↓</span>
+
+        <!-- Step 5 -->
+        <div class="flow-box bm1">
+          <div class="fb-step">Step 5</div>
+          <div class="fb-title">📉 損失計算（Loss）</div>
+          <div class="fb-sub">
+            予測値（ŷ）と正解（y）の差を数値化する<br>
+            回帰 → MSE損失：$L = \frac{1}{n}\sum(y-\hat{y})^2$<br>
+            分類 → 交差エントロピー損失：$L = -\sum y \log \hat{y}$<br>
+            VAE → KLダイバージェンス項を追加
+          </div>
+          <span class="flow-badge">Month 1 · Day 11–15（情報理論） ／ Month 2（損失関数）</span>
+        </div>
+        <span class="flow-arrow">↓</span>
+
+        <!-- Step 6 -->
+        <div class="flow-box bm3">
+          <div class="fb-step">Step 6</div>
+          <div class="fb-title">⬅️ 誤差逆伝播（Backpropagation）</div>
+          <div class="fb-sub">
+            損失を各パラメータが「どれだけ責任を持つか」を計算<br>
+            微分の連鎖律（Chain Rule）を使い、出力層→入力層へ逆向きに計算<br>
+            各重みに対して「勾配（gradient）」が求まる<br>
+            <code>loss.backward()</code> が内部でこれを実行
+          </div>
+          <span class="flow-badge">Month 1 · Day 6–10（微分・連鎖律） ／ Month 3 · Day 53–62</span>
+        </div>
+        <span class="flow-arrow">↓</span>
+
+        <!-- Step 7 -->
+        <div class="flow-box bm1">
+          <div class="fb-step">Step 7</div>
+          <div class="fb-title">🔃 パラメータ更新（Optimizer）</div>
+          <div class="fb-sub">
+            勾配を使って重みを少しだけ修正する<br>
+            SGD：$w \leftarrow w - \eta \nabla L$<br>
+            Adam：一次モーメント$m_t$・二次モーメント$v_t$を管理して安定更新<br>
+            学習率スケジューラで学習率を徐々に下げる
+          </div>
+          <span class="flow-badge">Month 1 · Day 6–10（最適化）</span>
+        </div>
+
+        <!-- loop back indicator -->
+        <div style="display:flex;align-items:center;gap:10px;margin:10px 0 2px;color:var(--text-dim);font-size:0.8rem;">
+          <span style="font-size:1.3rem;">↺</span> 次のバッチでStep 4に戻る
+        </div>
+
+      </div><!-- /loop-wrap -->
+
+      <span class="flow-arrow">↓</span>
+
+      <!-- Step 8 -->
+      <div class="flow-box bm1" style="border-color:var(--accent3)">
+        <div class="fb-step">Step 8</div>
+        <div class="fb-title">✅ バリデーション評価</div>
+        <div class="fb-sub">
+          検証データ（Val set）で性能を定期確認<br>
+          過学習（Overfitting）を検出→早期停止（Early Stopping）<br>
+          正則化（L1/L2 / Dropout / BatchNorm）で対処
+        </div>
+        <span class="flow-badge" style="background:rgba(108,255,168,0.1);color:var(--accent3)">Month 2（正則化） ／ Month 3（BN・Dropout）</span>
+      </div>
+      <span class="flow-arrow">↓</span>
+
+      <!-- Step 9 -->
+      <div class="flow-box bout">
+        <div class="fb-step">完成</div>
+        <div class="fb-title">🏆 学習済みモデル（Checkpoint）</div>
+        <div class="fb-sub">
+          重みパラメータをファイルに保存<br>
+          → 推論フェーズへ（④を参照）<br>
+          → または追加のFine-tuning（⑤を参照）
+        </div>
+        <span class="flow-badge">推論フェーズへ →</span>
+      </div>
+
+    </div><!-- /flow-col -->
+  </div><!-- /flow-wrap -->
+
+  <div class="ms-box">
+    <div class="ms-label">中学生向けのポイント</div>
+    Step 4〜7 のループが「AIの勉強」です。たとえば100万枚の画像なら、50枚ずつ（バッチ）に分けて2万回処理します。これを何周もするので、合計で何十万〜何百万回もStep 4〜7が繰り返されます。一回ごとに少しだけ賢くなっていくイメージです。
+  </div>
+
+  </div>
+</div>
+
+<!-- ======================================================
+     ④ AIの推論フロー（全体図）
+====================================================== -->
+<div class="topic" id="inference-flow" style="border-left-color:var(--accent4)">
+  <h3>④ AIの推論フロー（全体図）</h3>
+  <div class="topic-body">
+
+  <p class="topic-lead">推論は学習より単純です。勾配計算が不要なので高速に動きます。ただし、入力の種類（テキスト・画像・音声）によって前処理の方法が大きく違います。</p>
+
+  <div class="flow-wrap">
+    <div class="flow-col">
+
+      <div class="flow-box bdata">
+        <div class="fb-step">Step 1</div>
+        <div class="fb-title">📥 入力データ</div>
+        <div class="fb-sub">
+          テキスト：「明日の天気は？」<br>
+          画像：224×224 ピクセルの写真<br>
+          音声：サンプリングされた波形データ
+        </div>
+        <span class="flow-badge">ユーザーの入力</span>
+      </div>
+      <span class="flow-arrow">↓</span>
+
+      <div class="flow-box bm1">
+        <div class="fb-step">Step 2</div>
+        <div class="fb-title">🔢 トークン化・数値化</div>
+        <div class="fb-sub">
+          テキスト → トークンID（整数の列）に変換<br>
+          画像 → ピクセル値を [0,1] に正規化<br>
+          コンピュータは数字しか扱えないため必須
+        </div>
+        <span class="flow-badge">Month 1（ベクトル・行列） ／ Month 6（Word2Vec・埋め込み）</span>
+      </div>
+      <span class="flow-arrow">↓</span>
+
+      <div class="flow-box bm5">
+        <div class="fb-step">Step 3</div>
+        <div class="fb-title">🔤 埋め込み（Embedding）</div>
+        <div class="fb-sub">
+          トークンIDを高次元ベクトルに変換<br>
+          「東京」→ [0.23, -0.41, 0.87, …]（768次元など）<br>
+          意味的に近い単語は空間的にも近くなる
+        </div>
+        <span class="flow-badge">Month 5（RoPE・位置エンコーディング） ／ Month 6（埋め込み）</span>
+      </div>
+      <span class="flow-arrow">↓</span>
+
+      <div class="flow-box bm3" style="border-color:var(--month5)">
+        <div class="fb-step">Step 4</div>
+        <div class="fb-title">🧠 ネットワーク順伝播（no_grad）</div>
+        <div class="fb-sub">
+          学習済み重みを使って各層を順に計算<br>
+          Transformer：Self-Attention → FFN を N層繰り返す<br>
+          CNN：畳み込み → プーリング を繰り返す<br>
+          勾配計算は<code>no_grad()</code>でスキップ → 高速
+        </div>
+        <span class="flow-badge" style="background:rgba(155,89,182,0.13);color:var(--month5)">Month 3（NN） ／ Month 4（CNN） ／ Month 5（Transformer）</span>
+      </div>
+      <span class="flow-arrow">↓</span>
+
+      <div class="flow-box bm1">
+        <div class="fb-step">Step 5</div>
+        <div class="fb-title">📊 出力層・確率化</div>
+        <div class="fb-sub">
+          分類 → Softmax で各クラスの確率に変換<br>
+          LLM → 語彙数万個分の確率分布が出力される<br>
+          例：「東京」が次にくる確率 = 12.3%
+        </div>
+        <span class="flow-badge">Month 1（確率・Softmax） ／ Month 2（Softmax回帰）</span>
+      </div>
+      <span class="flow-arrow">↓</span>
+
+      <div class="flow-box bm6">
+        <div class="fb-step">Step 6</div>
+        <div class="fb-title">🎲 デコード・サンプリング</div>
+        <div class="fb-sub">
+          分類タスク → 最大確率のクラスを選択（Argmax）<br>
+          LLM → Top-p / Temperature サンプリングで次トークンを選択<br>
+          画像生成 → Diffusion の逆拡散ステップを繰り返す<br>
+          ビームサーチ → 複数候補を並列追跡して最適解を選ぶ
+        </div>
+        <span class="flow-badge">Month 6（RLHF・生成戦略） ／ Month 1（確率分布）</span>
+      </div>
+      <span class="flow-arrow">↓</span>
+
+      <div class="flow-box bout">
+        <div class="fb-step">完成</div>
+        <div class="fb-title">💬 最終出力</div>
+        <div class="fb-sub">
+          テキスト生成：「明日は晴れのち曇りでしょう」<br>
+          画像分類：「これは猫（98.2%）です」<br>
+          画像生成：新しい画像ファイル
+        </div>
+        <span class="flow-badge">ユーザーへの返答</span>
+      </div>
+
+    </div>
+  </div><!-- /flow-wrap -->
+
+  <div class="ms-box">
+    <div class="ms-label">中学生向けのポイント</div>
+    ChatGPTに「明日の天気は？」と入力するとき、裏側では「明日の天気は？」という文字列がトークンに分割され→数値に変換され→何十層ものネットワークを通過し→次に来る単語の確率が計算され→それを繰り返すことで一語ずつ返答が生成されています。LLMは「次の単語を予測する」をひたすら繰り返して文章を作っているのです。
+  </div>
+
+  </div>
+</div>
+
+<!-- ======================================================
+     ⑤ LLMの学習 3ステージ
+====================================================== -->
+<div class="topic" id="llm-flow" style="border-left-color:var(--month5)">
+  <h3>⑤ ChatGPT系 LLM の学習 3ステージ</h3>
+  <div class="topic-body">
+
+  <p class="topic-lead">ChatGPTやGeminiのような「会話できるAI」は、3つの段階を経て作られています。1段階目だけで数週間・数億円のコンピュータ資源が必要です。</p>
+
+  <div class="hflow">
+
+    <div class="hflow-step">
+      <div class="hflow-box bm5">
+        <div class="ht">Stage 1<br>事前学習</div>
+        <div class="hd">
+          インターネット上の<br>テキスト数兆文字を<br>学習データに使用<br><br>
+          タスク：<br>「次のトークンを<br>予測する」を<br>ひたすら繰り返す
+        </div>
+        <div class="hb"><span class="flow-badge" style="background:rgba(155,89,182,0.13);color:var(--month5)">Month 5</span></div>
+      </div>
+    </div>
+
+    <div class="hflow-arrow">→</div>
+
+    <div class="hflow-step">
+      <div class="hflow-box bm6" style="border-color:var(--accent2)">
+        <div class="ht">Stage 2<br>SFT（指示学習）</div>
+        <div class="hd">
+          人間が書いた<br>「質問→良い回答」<br>ペアで追加学習<br><br>
+          指示（Instruction）に<br>従って応答できるよう<br>ファインチューニング
+        </div>
+        <div class="hb"><span class="flow-badge" style="background:rgba(255,108,140,0.1);color:var(--accent2)">Month 6</span></div>
+      </div>
+    </div>
+
+    <div class="hflow-arrow">→</div>
+
+    <div class="hflow-step">
+      <div class="hflow-box bm6">
+        <div class="ht">Stage 3<br>RLHF / DPO</div>
+        <div class="hd">
+          人間が複数の回答に<br>ランキングをつける<br><br>
+          PPO（強化学習）や<br>DPOで好ましい回答を<br>出やすくする<br><br>
+          有害な出力を抑制
+        </div>
+        <div class="hb"><span class="flow-badge">Month 6</span></div>
+      </div>
+    </div>
+
+    <div class="hflow-arrow">→</div>
+
+    <div class="hflow-step">
+      <div class="hflow-box bout">
+        <div class="ht">推論時<br>最適化</div>
+        <div class="hd">
+          KVキャッシュで<br>高速化<br><br>
+          量子化（INT8等）で<br>軽量化<br><br>
+          投機的デコードで<br>スループット向上
+        </div>
+        <div class="hb"><span class="flow-badge">Month 5</span></div>
+      </div>
+    </div>
+
+    <div class="hflow-arrow">→</div>
+
+    <div class="hflow-step">
+      <div class="hflow-box" style="border-color:var(--accent3);">
+        <div class="ht">完成</div>
+        <div class="hd">
+          ChatGPT /<br>Claude /<br>Gemini …<br><br>
+          ユーザーと<br>自然な会話が<br>できるAI
+        </div>
+        <div class="hb"><span class="flow-badge" style="background:rgba(108,255,168,0.1);color:var(--accent3);">製品</span></div>
+      </div>
+    </div>
+
+  </div><!-- /hflow -->
+
+  <div class="ms-box">
+    <div class="ms-label">中学生向けのひとこと</div>
+    Stage 1（事前学習）は「教科書を全部読む」段階。Stage 2（SFT）は「先生に質問の答え方を教わる」段階。Stage 3（RLHF）は「テストを受けて、良い答えをほめてもらい、悪い答えを直す」段階です。
+  </div>
+
+  <h4>推論時のテキスト生成フロー（1トークンずつ）</h4>
+
+  <div class="flow-wrap">
+    <div class="flow-col">
+      <div class="flow-box bm5">
+        <div class="fb-title">入力：「東京の人口は」</div>
+        <div class="fb-sub">→ トークン化：["東京", "の", "人口", "は"]</div>
+      </div>
+      <span class="flow-arrow">↓</span>
+      <div class="flow-box bm5">
+        <div class="fb-title">Transformer 順伝播</div>
+        <div class="fb-sub">Self-Attention で全トークンの関係を計算<br>KVキャッシュで過去の計算を再利用（高速化）</div>
+        <span class="flow-badge">Month 5（Attention・KVキャッシュ）</span>
+      </div>
+      <span class="flow-arrow">↓</span>
+      <div class="flow-box bm1">
+        <div class="fb-title">語彙全体への確率分布</div>
+        <div class="fb-sub">「約」12.4%、「何」3.1%、「およそ」8.7% …</div>
+        <span class="flow-badge">Month 1（Softmax・確率）</span>
+      </div>
+      <span class="flow-arrow">↓</span>
+      <div class="flow-box bm6">
+        <div class="fb-title">Top-p サンプリング（temperature調整）</div>
+        <div class="fb-sub">temperature=0.7 → 次トークン「約」を選択</div>
+        <span class="flow-badge">Month 6（生成戦略）</span>
+      </div>
+      <span class="flow-arrow">↓</span>
+      <div class="flow-box bout">
+        <div class="fb-title">「約」を出力 → 再び入力として追加</div>
+        <div class="fb-sub">「東京の人口は約」→ 次は「1400万人」…<br>EOS（終端）トークンが出るまで繰り返す</div>
+      </div>
+    </div>
+  </div>
+
+  </div>
+</div>
+
+<!-- ======================================================
+     ⑥ 画像認識AIの学習・推論フロー
+====================================================== -->
+<div class="topic" id="image-flow" style="border-left-color:var(--month4)">
+  <h3>⑥ 画像認識AI（CNN）の学習・推論フロー</h3>
+  <div class="topic-body">
+
+  <p class="topic-lead">画像認識AIはCNN（畳み込みニューラルネットワーク）を使います。画像をそのまま全結合層に渡すと「位置情報」が失われてしまうため、「畳み込み＋プーリング」という特殊な処理で特徴を抽出します。</p>
+
+  <div class="twin-flow">
+    <!-- 学習 -->
+    <div class="twin-flow-col">
+      <div class="twin-col-title" style="background:rgba(196,108,255,0.1);border:1px solid rgba(196,108,255,0.25);color:var(--accent5);">🔄 学習フロー</div>
+
+      <div class="flow-col" style="width:100%;">
+        <div class="flow-box bdata" style="width:100%;">
+          <div class="fb-title">224×224 の画像 + ラベル</div>
+          <div class="fb-sub">「猫」「犬」「車」…</div>
+        </div>
+        <span class="flow-arrow">↓</span>
+        <div class="flow-box bm1" style="width:100%;">
+          <div class="fb-title">前処理</div>
+          <div class="fb-sub">正規化（0〜1）、データ拡張<br>（反転・回転で水増し）</div>
+          <span class="flow-badge">Month 1（正規化）</span>
+        </div>
+        <span class="flow-arrow">↓</span>
+        <div class="flow-box bm4" style="width:100%;">
+          <div class="fb-title">畳み込み層 × N</div>
+          <div class="fb-sub">
+            フィルタ（カーネル）を画像に滑らせる<br>
+            エッジ・テクスチャ・形状を段階的に検出<br>
+            im2col で行列積に変換して高速計算
+          </div>
+          <span class="flow-badge">Month 4（CNN・im2col）</span>
+        </div>
+        <span class="flow-arrow">↓</span>
+        <div class="flow-box bm4" style="width:100%;">
+          <div class="fb-title">プーリング層</div>
+          <div class="fb-sub">Max Pooling で特徴マップを縮小<br>平行移動不変性を獲得</div>
+          <span class="flow-badge">Month 4</span>
+        </div>
+        <span class="flow-arrow">↓</span>
+        <div class="flow-box bm3" style="width:100%;">
+          <div class="fb-title">全結合層 + BatchNorm</div>
+          <div class="fb-sub">特徴ベクトルをクラス数次元へ</div>
+          <span class="flow-badge">Month 3（BatchNorm）</span>
+        </div>
+        <span class="flow-arrow">↓</span>
+        <div class="flow-box bm1" style="width:100%;">
+          <div class="fb-title">交差エントロピー損失</div>
+          <div class="fb-sub">予測確率と正解ラベルの差を計算</div>
+          <span class="flow-badge">Month 1（情報理論）</span>
+        </div>
+        <span class="flow-arrow">↓</span>
+        <div class="flow-box bm3" style="width:100%;">
+          <div class="fb-title">誤差逆伝播 → Adam で更新</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 推論 -->
+    <div class="twin-flow-col">
+      <div class="twin-col-title" style="background:rgba(255,196,108,0.1);border:1px solid rgba(255,196,108,0.25);color:var(--accent4);">🚀 推論フロー</div>
+
+      <div class="flow-col" style="width:100%;">
+        <div class="flow-box bdata" style="width:100%;">
+          <div class="fb-title">新しい画像（ラベルなし）</div>
+          <div class="fb-sub">スマホで撮った写真など</div>
+        </div>
+        <span class="flow-arrow">↓</span>
+        <div class="flow-box bm1" style="width:100%;">
+          <div class="fb-title">同じ前処理</div>
+          <div class="fb-sub">サイズ変換・正規化のみ<br>（データ拡張なし）</div>
+        </div>
+        <span class="flow-arrow">↓</span>
+        <div class="flow-box bm4" style="width:100%;">
+          <div class="fb-title">no_grad で順伝播</div>
+          <div class="fb-sub">
+            畳み込み → プーリング を繰り返す<br>
+            量子化（INT8）で高速化可能<br>
+            ResNet のSkip Connection で勾配消失回避
+          </div>
+          <span class="flow-badge">Month 4（ResNet）</span>
+        </div>
+        <span class="flow-arrow">↓</span>
+        <div class="flow-box bm1" style="width:100%;">
+          <div class="fb-title">Softmax → 確率</div>
+          <div class="fb-sub">
+            猫：87.3%<br>
+            犬：9.1%<br>
+            その他：3.6%
+          </div>
+          <span class="flow-badge">Month 1（Softmax）</span>
+        </div>
+        <span class="flow-arrow">↓</span>
+        <div class="flow-box bout" style="width:100%;">
+          <div class="fb-title">「猫（87.3%）」を出力</div>
+        </div>
+      </div>
+    </div>
+  </div><!-- /twin-flow -->
+
+  <div class="ms-box">
+    <div class="ms-label">中学生向けのたとえ</div>
+    畳み込み層は「虫眼鏡を画像の上をなぞって特徴を記録する」イメージです。最初の層は「エッジ（輪郭）」を検出し、次の層は「目・鼻・耳のような部品」を、最後の層は「それが猫かどうか」を判断します。
+  </div>
+
+  </div>
+</div>
+
+<!-- ======================================================
+     ⑦ 画像生成AI（Diffusion）の推論フロー
+====================================================== -->
+<div class="topic" id="diffusion-flow" style="border-left-color:var(--month6)">
+  <h3>⑦ 画像生成AI（Diffusion Model）の学習・推論フロー</h3>
+  <div class="topic-body">
+
+  <p class="topic-lead">Stable Diffusion や DALL-E のような画像生成AIは「拡散モデル」を使います。学習は「画像にノイズを加える」、推論は「ノイズから画像を復元する」という逆の方向に進みます。</p>
+
+  <h4>学習フロー（前向き拡散＋ノイズ予測）</h4>
+  <div class="flow-wrap">
+    <div class="flow-col">
+      <div class="flow-box bdata">
+        <div class="fb-title">元の画像 $x_0$</div>
+        <div class="fb-sub">きれいな猫の写真</div>
+      </div>
+      <span class="flow-arrow">↓</span>
+      <div class="flow-box bm6">
+        <div class="fb-title">前向き過程（ノイズを加える）</div>
+        <div class="fb-sub">
+          時刻$t$をランダムに選び、ガウスノイズを加える<br>
+          $x_t = \sqrt{\bar{\alpha}_t} x_0 + \sqrt{1-\bar{\alpha}_t}\epsilon$<br>
+          $T$ステップ後には完全なランダムノイズになる<br>
+          → これは確率的微分方程式（SDE）で記述できる
+        </div>
+        <span class="flow-badge">Month 6（Diffusion・確率過程）</span>
+      </div>
+      <span class="flow-arrow">↓</span>
+      <div class="flow-box bm3">
+        <div class="fb-title">U-Net でノイズを予測</div>
+        <div class="fb-sub">
+          「このノイズだらけの$x_t$は、もとは何だったか」を学習<br>
+          入力：ノイズ画像$x_t$ + 時刻$t$ + テキスト条件<br>
+          出力：加えたノイズ$\epsilon$の予測値$\hat{\epsilon}$
+        </div>
+        <span class="flow-badge">Month 3（NN構造）</span>
+      </div>
+      <span class="flow-arrow">↓</span>
+      <div class="flow-box bm1">
+        <div class="fb-title">MSE損失で学習</div>
+        <div class="fb-sub">$L = \|\epsilon - \hat{\epsilon}_\theta(x_t, t)\|^2$</div>
+        <span class="flow-badge">Month 1（損失関数）</span>
+      </div>
+    </div>
+  </div>
+
+  <h4>推論フロー（逆拡散＝ノイズから画像を生成）</h4>
+  <div class="flow-wrap">
+    <div class="flow-col">
+      <div class="flow-box bdata">
+        <div class="fb-title">純粋なランダムノイズ $x_T$</div>
+        <div class="fb-sub">テキストプロンプト「海辺の夕日」を条件として与える</div>
+      </div>
+      <span class="flow-arrow">↓</span>
+      <div class="flow-loop-wrap">
+        <div class="flow-loop-label">⟳ T〜1ステップ繰り返す（DDIMで20〜50ステップに短縮可）</div>
+        <div class="flow-box bm6" style="margin-top:8px;">
+          <div class="fb-title">学習済みU-Netでノイズを予測</div>
+          <div class="fb-sub">
+            現在の$x_t$から加えられたノイズを推定<br>
+            テキスト条件（Classifier-free guidance）で方向を誘導
+          </div>
+          <span class="flow-badge">Month 6（Diffusion） ／ Month 5（Cross-Attention）</span>
+        </div>
+        <span class="flow-arrow">↓</span>
+        <div class="flow-box bm6">
+          <div class="fb-title">$x_{t-1}$ を計算（ノイズを少し除去）</div>
+          <div class="fb-sub">1ステップだけノイズを除去して前の状態に近づける</div>
+          <span class="flow-badge">Month 6（確率過程・DDIM）</span>
+        </div>
+        <div style="color:var(--text-dim);font-size:0.8rem;margin:6px 0 2px;display:flex;align-items:center;gap:8px;"><span style="font-size:1.3rem;">↺</span> t を 1 減らして繰り返す</div>
+      </div>
+      <span class="flow-arrow">↓</span>
+      <div class="flow-box bout">
+        <div class="fb-title">$x_0$ = 生成された画像</div>
+        <div class="fb-sub">「海辺の夕日」の画像が完成</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ms-box">
+    <div class="ms-label">中学生向けのたとえ</div>
+    消しゴムで少しずつ絵を消してグチャグチャにする（前向き過程）。AIはこの「消し方のパターン」を学ぶ。推論時は逆に「グチャグチャな状態から少しずつ消しゴムをかけた跡を元に戻す」ことで絵を生成します。
+  </div>
+
+  </div>
+</div>
+
+<!-- ======================================================
+     ⑧ カリキュラム対応マップ
+====================================================== -->
+<div class="topic" id="curr-map" style="border-left-color:var(--accent1)">
+  <h3>⑧ このカリキュラムとAIの対応マップ</h3>
+  <div class="topic-body">
+
+  <p>各Monthで学ぶ内容が、AIの学習・推論のどのステップに対応するかをまとめました。</p>
+
+  <div class="curr-map">
+    <div class="curr-node" style="border-color:var(--month1);">
+      <div class="cn-title" style="color:var(--month1);">Month 1 · 数学基礎</div>
+      <div class="cn-items">
+        線形代数（行列積）<br>
+        微分・連鎖律<br>
+        確率・Softmax<br>
+        情報理論（KL / CE）<br>
+        最適化（SGD / Adam）<br>
+        データ前処理・評価指標
+      </div>
+      <div class="cn-use">AIの「計算言語」そのもの。全ステップの土台。</div>
+    </div>
+
+    <div class="curr-node" style="border-color:var(--month2);">
+      <div class="cn-title" style="color:var(--month2);">Month 2 · 古典的ML</div>
+      <div class="cn-items">
+        線形回帰・正則化<br>
+        ロジスティック回帰<br>
+        Softmax分類器<br>
+        決定木・ Random Forest<br>
+        PCA・次元削減
+      </div>
+      <div class="cn-use">ニューラルネット以前の「シンプルなAI」。NNの動作原理の理解に必須。</div>
+    </div>
+
+    <div class="curr-node" style="border-color:var(--month3);">
+      <div class="cn-title" style="color:var(--month3);">Month 3 · NN基礎</div>
+      <div class="cn-items">
+        MLP・活性化関数<br>
+        誤差逆伝播法<br>
+        計算グラフ<br>
+        BatchNorm / Dropout<br>
+        重み初期化
+      </div>
+      <div class="cn-use">学習フローのStep 4〜7（順伝播・損失・逆伝播・更新）の核心。</div>
+    </div>
+
+    <div class="curr-node" style="border-color:var(--month4);">
+      <div class="cn-title" style="color:var(--month4);">Month 4 · CNN</div>
+      <div class="cn-items">
+        2D畳み込み演算<br>
+        im2col による高速化<br>
+        出力サイズ計算<br>
+        Stride / Padding<br>
+        ResNet / Skip Connection
+      </div>
+      <div class="cn-use">画像認識・画像生成AIのネットワーク設計に直接使用。</div>
+    </div>
+
+    <div class="curr-node" style="border-color:var(--month5);">
+      <div class="cn-title" style="color:var(--month5);">Month 5 · Transformer</div>
+      <div class="cn-items">
+        LSTM・勾配消失対策<br>
+        Scaled Dot-Product Attention<br>
+        Multi-Head Attention<br>
+        KVキャッシュ（推論高速化）<br>
+        RoPE（位置エンコーディング）<br>
+        GPT vs BERT 構造の違い
+      </div>
+      <div class="cn-use">LLM（ChatGPT系）の推論フロー（Step 3〜6）に直接対応。</div>
+    </div>
+
+    <div class="curr-node" style="border-color:var(--month6);">
+      <div class="cn-title" style="color:var(--month6);">Month 6 · 生成モデル・RL</div>
+      <div class="cn-items">
+        VAE・GAN<br>
+        Diffusion Model<br>
+        強化学習・PPO<br>
+        RLHF・DPO<br>
+        Word2Vec → Transformer埋め込み
+      </div>
+      <div class="cn-use">ChatGPTのRLHFステージ・画像生成AI・音声生成AIの中核。</div>
+    </div>
+  </div>
+
+  <h4>数学概念 → AIの学習・推論での役割（早見表）</h4>
+  <div class="table-wrap"><table>
+    <tr><th>数学概念</th><th>Month</th><th>学習時の役割</th><th>推論時の役割</th></tr>
+    <tr><td><strong>行列積</strong></td><td style="color:var(--month1)">M1</td><td>順伝播・逆伝播（転置積）</td><td>順伝播のみ・量子化で高速化</td></tr>
+    <tr><td><strong>連鎖律（微分）</strong></td><td style="color:var(--month1)">M1</td><td>誤差逆伝播法の計算基盤</td><td>不要（<code>no_grad</code>）</td></tr>
+    <tr><td><strong>確率・Softmax</strong></td><td style="color:var(--month1)">M1</td><td>交差エントロピー損失の計算</td><td>クラス確率化・トークンサンプリング</td></tr>
+    <tr><td><strong>KLダイバージェンス</strong></td><td style="color:var(--month1)">M1</td><td>VAE損失・RLHF のKLペナルティ</td><td>確率キャリブレーション評価</td></tr>
+    <tr><td><strong>Adam最適化</strong></td><td style="color:var(--month1)">M1</td><td>$m_t, v_t$ 管理でパラメータ更新</td><td>不要（パラメータ固定）</td></tr>
+    <tr><td><strong>内積・類似度</strong></td><td style="color:var(--month1)">M1</td><td>Attention スコア計算（$QK^T$）</td><td>KVキャッシュと組合せた高速化</td></tr>
+    <tr><td><strong>SVD・固有値</strong></td><td style="color:var(--month1)">M1</td><td>PCA・LoRA（低ランク近似学習）</td><td>量子化・枝刈りで低ランク近似</td></tr>
+    <tr><td><strong>BatchNorm / LayerNorm</strong></td><td style="color:var(--month3)">M3</td><td>BN：バッチ統計で正規化・移動平均更新</td><td>BN：移動平均使用。LN：変化なし</td></tr>
+    <tr><td><strong>畳み込み</strong></td><td style="color:var(--month4)">M4</td><td>im2col で行列積に変換しフィルタ学習</td><td>INT8量子化CNNで組み込み対応</td></tr>
+    <tr><td><strong>Attention機構</strong></td><td style="color:var(--month5)">M5</td><td>全トークン間の関係を学習</td><td>KVキャッシュで過去計算を再利用</td></tr>
+    <tr><td><strong>確率過程・SDE</strong></td><td style="color:var(--month6)">M6</td><td>Diffusion の前向き過程</td><td>DDIMで20ステップに短縮して逆拡散</td></tr>
+    <tr><td><strong>強化学習（MDP）</strong></td><td style="color:var(--month6)">M6</td><td>PPO/DPOで報酬最大化＋KLペナルティ</td><td>Beam Search・サンプリングでデコード</td></tr>
+  </table></div>
+
+  </div>
+</div>
+
+<!-- ======================================================
+     ⑨ なぜ数学が必要か
+====================================================== -->
+<div class="topic" id="why-math" style="border-left-color:var(--accent3)">
+  <h3>⑨ なぜ数学が必要なのか？</h3>
+  <div class="topic-body">
+
+  <div class="ms-box">
+    <div class="ms-label">中学生向けのまとめ</div>
+    「なんでAIの勉強に数学が必要なの？」と思うかもしれません。理由はシンプルです。コンピュータは「数字の計算」しかできません。どんな賢いAIも、最終的には「行列の計算・微分・確率」に分解されます。数学を学ぶことで、AIの中身を「理解して作れる人」になれます。
+  </div>
+
+  <div class="table-wrap"><table>
+    <tr><th>数学ができないと…</th><th>数学がわかると…</th></tr>
+    <tr><td>AIをブラックボックスとして使うだけ</td><td>なぜ学習が失敗したか原因がわかる</td></tr>
+    <tr><td>既存モデルのコピーしかできない</td><td>新しいアーキテクチャを設計できる</td></tr>
+    <tr><td>なぜ精度が上がったかわからない</td><td>ハイパーパラメータを理論的に調整できる</td></tr>
+    <tr><td>論文が読めない</td><td>最新の研究を理解して実装できる</td></tr>
+    <tr><td>過学習・勾配消失の対処ができない</td><td>BatchNorm・Dropoutの意味を理解して使える</td></tr>
+  </table></div>
+
+  <div class="insight">
+    <p><strong>大切なこと：</strong>このカリキュラムの数学は「受験のための数学」ではなく、「AIを作るための道具」です。Month 1 の線形代数・微分・確率を理解するだけで、Month 3〜6 の内容が驚くほどスムーズに理解できます。逆に数学を飛ばすと、コードは書けても「なぜそれが動くのか」がわかりません。土台から積み上げていきましょう。</p>
+  </div>
+
+  <div class="matome">
+    <span class="matome-label">このページのまとめ</span>
+    <ul>
+      <li>AIの「学習」はデータ→前処理→順伝播→損失計算→逆伝播→パラメータ更新のループ</li>
+      <li>AIの「推論」は学習済み重みを使った順伝播のみ（勾配計算なし）</li>
+      <li>LLMの学習は「事前学習 → SFT → RLHF」の3段階</li>
+      <li>画像認識には CNN（畳み込み＋プーリング）が使われる</li>
+      <li>画像生成には Diffusion Model（ノイズを逆方向に除去）が使われる</li>
+      <li>Month 1 の数学（行列・微分・確率）は全AIモデルの共通基盤</li>
+      <li>Month 1〜6 の内容はすべて現実のAIシステムの特定のステップに対応している</li>
+    </ul>
+  </div>
+
+  </div>
+</div>
+
+<!-- Prev/Next nav -->
+<div class="page-nav">
+  <a href="index.html">
+    <div class="nav-label">← ホーム</div>
+    <div class="nav-title">サイトトップへ</div>
+  </a>
+  <a href="month1.html" class="next">
+    <div class="nav-label">次のページ →</div>
+    <div class="nav-title">Month 1: 数学基礎</div>
+  </a>
+</div>
+
+</div><!-- /container -->
+<button id="back-to-top" onclick="window.scrollTo({top:0,behavior:'smooth'})" title="先頭へ戻る">↑</button>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [{left:"$$",right:"$$",display:true},{left:"$",right:"$",display:false}],
+    throwOnError: false
+  });
+  document.querySelectorAll('.topic').forEach(topic => {
+    const h3 = topic.querySelector('h3');
+    if (!h3) return;
+    const body = topic.querySelector('.topic-body');
+    if (!body) return;
+    h3.addEventListener('click', () => topic.classList.toggle('collapsed'));
+  });
+  const bar = document.getElementById('progress-bar');
+  const btn = document.getElementById('back-to-top');
+  window.addEventListener('scroll', () => {
+    const h = document.documentElement;
+    bar.style.width = Math.min((h.scrollTop / (h.scrollHeight - h.clientHeight)) * 100, 100) + '%';
+    btn.classList.toggle('visible', h.scrollTop > 400);
+  }, { passive: true });
+});
+</script>
+</body>
+</html>
