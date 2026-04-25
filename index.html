@@ -88,6 +88,446 @@
   </div>
 </div>
 
+<!-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+     実習コードセクション
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ -->
+<div style="margin-top:52px;padding-top:42px;border-top:1px solid var(--border);">
+  <h2 style="font-size:1.25rem;font-weight:500;margin-bottom:10px;display:flex;align-items:center;gap:10px;">
+    <span style="font-size:1.1rem;">📂</span> 実習コード — 各章の学習・推論プログラム
+  </h2>
+  <p style="color:var(--text-dim);font-size:0.88rem;margin-bottom:24px;line-height:1.8;">
+    各 Month で学んだ理論を使って <strong style="color:var(--text);">実際にAIを学習・推論させる</strong> Python スクリプトです。<br>
+    numpy のみ必須。sklearn がある場合は自動で実データを使用、ない場合は urllib でフォールバック。<br>
+    <code>ai_learning_130days/ai_course/training/</code> に配置してあります。
+  </p>
+</div>
+
+<!-- ───── Month 1 ───── -->
+<div class="topic collapsed" style="border-left-color:var(--month1);margin-bottom:16px;">
+  <h3><span class="day-tag" style="background:rgba(74,144,217,0.15);color:var(--month1);">Month 1 · Day 1–20</span> 数学基礎 — 実習コード</h3>
+  <div class="topic-body">
+    <div class="training" style="margin-bottom:18px;">
+      <div class="label">実行コマンド</div>
+      <code>python ai_learning_130days/ai_course/training/month1_math_fundamentals.py</code><br>
+      <span style="font-size:0.82rem;color:var(--text-dim);margin-top:4px;display:block;">データセット: Iris (150件 / 4特徴量 / 3クラス) — sklearn or UCI 自動取得</span>
+    </div>
+    <p style="font-size:0.9rem;color:var(--text-dim);margin-bottom:14px;">
+      実装内容: <strong style="color:var(--text);">PCA (固有値分解・SVD)</strong> / <strong style="color:var(--text);">Adam 勾配降下法</strong> / <strong style="color:var(--text);">MLE ガウシアン・ナイーブベイズ</strong> / <strong style="color:var(--text);">KL 発散・交差エントロピー</strong> / 評価指標 (Precision / Recall / F1)
+    </p>
+
+    <div class="code-block">
+      <div class="code-label">month1_math_fundamentals.py — Adam 最適化 + PCA</div>
+      <pre><span class="cm"># ── 固有値分解で PCA を実装 ──────────────────────</span>
+X_c = X_tr - X_tr.mean(axis=<span class="num">0</span>)            <span class="cm"># 平均を引いてセンタリング</span>
+Cov = (X_c.T @ X_c) / (len(X_c) - <span class="num">1</span>)    <span class="cm"># 共分散行列 (4×4)</span>
+eigvals, eigvecs = np.linalg.<span class="fn">eigh</span>(Cov)   <span class="cm"># 対称行列 → 安定な固有値分解</span>
+order = np.<span class="fn">argsort</span>(eigvals)[::-<span class="num">1</span>]        <span class="cm"># 大きい固有値から並べ替え</span>
+W_pca = eigvecs[:, :<span class="num">2</span>]                    <span class="cm"># 第1・第2主成分 → 2次元に圧縮</span>
+X_pca = X_tr @ W_pca
+
+<span class="cm"># ── Adam オプティマイザ (連鎖律で計算した勾配を受け取る) ──</span>
+<span class="kw">for</span> t <span class="kw">in</span> <span class="fn">range</span>(<span class="num">1</span>, <span class="num">201</span>):
+    y_hat = X_pca @ w + b                  <span class="cm"># 順伝播: 線形予測</span>
+    loss  = np.<span class="fn">mean</span>((y_hat - y_reg) ** <span class="num">2</span>) <span class="cm"># MSE 損失</span>
+
+    grad_w = X_pca.T @ (<span class="num">2</span> * (y_hat - y_reg) / N)  <span class="cm"># ∂L/∂w (連鎖律)</span>
+    grad_b = (<span class="num">2</span> * (y_hat - y_reg) / N).<span class="fn">sum</span>()       <span class="cm"># ∂L/∂b</span>
+
+    <span class="cm"># 一次モーメント (方向): β₁ · m + (1-β₁) · g</span>
+    m_w = beta1 * m_w + (<span class="num">1</span> - beta1) * grad_w
+    <span class="cm"># 二次モーメント (スケール): β₂ · v + (1-β₂) · g²</span>
+    v_w = beta2 * v_w + (<span class="num">1</span> - beta2) * grad_w ** <span class="num">2</span>
+
+    m_hat = m_w / (<span class="num">1</span> - beta1 ** t)   <span class="cm"># バイアス補正</span>
+    v_hat = v_w / (<span class="num">1</span> - beta2 ** t)
+    w -= lr * m_hat / (np.<span class="fn">sqrt</span>(v_hat) + eps)  <span class="cm"># パラメータ更新</span></pre>
+    </div>
+
+    <div class="code-block">
+      <div class="code-label">KL 発散 · 交差エントロピー · ナイーブベイズ推論</div>
+      <pre><span class="cm"># ── 情報理論: KL 発散・交差エントロピー ──────────</span>
+<span class="kw">def</span> <span class="fn">kl_divergence</span>(p, q):
+    mask = (p > <span class="num">0</span>) & (q > <span class="num">0</span>)
+    <span class="kw">return</span> np.<span class="fn">sum</span>(p[mask] * np.<span class="fn">log</span>(p[mask] / q[mask]))  <span class="cm"># KL(p||q)</span>
+
+<span class="cm"># ── ナイーブベイズで新しいアヤメを分類 (推論) ───</span>
+new_samples = np.<span class="fn">array</span>([
+    [<span class="num">5.1</span>, <span class="num">3.5</span>, <span class="num">1.4</span>, <span class="num">0.2</span>],  <span class="cm"># setosa らしいサンプル</span>
+    [<span class="num">6.3</span>, <span class="num">3.3</span>, <span class="num">4.7</span>, <span class="num">1.6</span>],  <span class="cm"># versicolor らしいサンプル</span>
+    [<span class="num">6.7</span>, <span class="num">3.0</span>, <span class="num">5.2</span>, <span class="num">2.3</span>],  <span class="cm"># virginica らしいサンプル</span>
+])
+preds = nb_predict(new_samples)   <span class="cm"># → ['setosa', 'versicolor', 'virginica']</span></pre>
+    </div>
+
+    <div class="inference">
+      <div class="label">期待される出力</div>
+      PCA 寄与率 → 固有値 / Adam 学習曲線 (200ステップ) / ナイーブベイズ分類精度 / KL 発散値 / 新サンプル3件の推論結果
+    </div>
+  </div>
+</div>
+
+<!-- ───── Month 2 ───── -->
+<div class="topic collapsed" style="border-left-color:var(--month2);margin-bottom:16px;">
+  <h3><span class="day-tag" style="background:rgba(80,184,122,0.15);color:var(--month2);">Month 2 · Day 21–42</span> 古典的機械学習 — 実習コード</h3>
+  <div class="topic-body">
+    <div class="training" style="margin-bottom:18px;">
+      <div class="label">実行コマンド</div>
+      <code>python ai_learning_130days/ai_course/training/month2_classical_ml.py</code><br>
+      <span style="font-size:0.82rem;color:var(--text-dim);margin-top:4px;display:block;">データセット: Wine (178件 / 13特徴量 / 3クラス) + 合成住宅価格データ — sklearn or UCI 自動取得</span>
+    </div>
+    <p style="font-size:0.9rem;color:var(--text-dim);margin-bottom:14px;">
+      実装内容: <strong style="color:var(--text);">OLS / Ridge / Lasso (座標降下法)</strong> / <strong style="color:var(--text);">Softmax 多クラス分類</strong> / <strong style="color:var(--text);">決定木スタンプ + バギング (RandomForest)</strong> / <strong style="color:var(--text);">PCA 次元削減</strong>
+    </p>
+
+    <div class="code-block">
+      <div class="code-label">month2_classical_ml.py — Lasso 座標降下法 + Softmax</div>
+      <pre><span class="cm"># ── Lasso 回帰 (L1 正則化) — 座標降下法 ─────────</span>
+<span class="kw">def</span> <span class="fn">lasso_fit</span>(Xb, y, alpha, max_iter=<span class="num">200</span>):
+    w = np.<span class="fn">zeros</span>(Xb.shape[<span class="num">1</span>])
+    <span class="kw">for</span> _ <span class="kw">in</span> <span class="fn">range</span>(max_iter):
+        <span class="kw">for</span> j <span class="kw">in</span> <span class="fn">range</span>(<span class="fn">len</span>(w)):
+            residual = y - Xb @ w + Xb[:, j] * w[j]  <span class="cm"># j以外の寄与を除く</span>
+            rho = Xb[:, j] @ residual                  <span class="cm"># ρ = X_j · r</span>
+            z_j = np.<span class="fn">sum</span>(Xb[:, j] ** <span class="num">2</span>)               <span class="cm"># ||X_j||²</span>
+            <span class="cm"># Soft-thresholding (L1 の近接オペレータ)</span>
+            w[j] = np.<span class="fn">sign</span>(rho) * <span class="fn">max</span>(<span class="fn">abs</span>(rho) - alpha, <span class="num">0</span>) / z_j
+    <span class="kw">return</span> w
+
+<span class="cm"># ── Softmax 多クラス分類器 ───────────────────────</span>
+<span class="kw">class</span> <span class="fn">SoftmaxClassifier</span>:
+    <span class="kw">def</span> <span class="fn">fit</span>(self, X, y):
+        Y = np.<span class="fn">eye</span>(C)[y]            <span class="cm"># one-hot エンコード</span>
+        <span class="kw">for</span> ep <span class="kw">in</span> <span class="fn">range</span>(self.epochs):
+            Z = X @ self.W + self.b  <span class="cm"># 線形変換 (N, C)</span>
+            P = <span class="fn">softmax</span>(Z)          <span class="cm"># 確率化 → Σ=1</span>
+            <span class="cm"># Softmax + CE の勾配: P - Y_onehot (シンプル!)</span>
+            dZ = (P - Y) / <span class="fn">len</span>(X)
+            self.W -= self.lr * X.T @ dZ
+            self.b -= self.lr * dZ.<span class="fn">sum</span>(<span class="num">0</span>)</pre>
+    </div>
+
+    <div class="code-block">
+      <div class="code-label">RandomForest (バギング) — 推論デモ</div>
+      <pre><span class="cm"># ── バギング: ブートストラップ + 多数決 ─────────</span>
+<span class="kw">class</span> <span class="fn">RandomForest</span>:
+    <span class="kw">def</span> <span class="fn">fit</span>(self, X, y):
+        <span class="kw">for</span> _ <span class="kw">in</span> <span class="fn">range</span>(self.n_trees):
+            <span class="cm"># ブートストラップ: 重複ありで N件を再抽出</span>
+            bidx = np.random.<span class="fn">choice</span>(N, N, replace=<span class="kw">True</span>)
+            tree = <span class="fn">DecisionStump</span>()
+            tree.<span class="fn">fit</span>(X[bidx], y[bidx])
+            self.trees.<span class="fn">append</span>(tree)
+
+<span class="cm"># 推論: 新しいワインサンプルを3モデルで分類比較</span>
+<span class="cm"># OLS RMSE=0.xxxx | Ridge RMSE=0.xxxx | Lasso RMSE=0.xxxx</span>
+<span class="cm"># Softmax (13D) acc=0.97 | Softmax (PCA 2D) acc=0.93</span>
+<span class="cm"># RandomForest (50本) acc=0.97</span></pre>
+    </div>
+
+    <div class="inference">
+      <div class="label">期待される出力</div>
+      OLS/Ridge/Lasso の RMSE 比較 / Lasso の係数スパース化 / Softmax 300エポック学習曲線 / RF vs Softmax 精度比較 / PCA 寄与率 / ワイン分類推論3件
+    </div>
+  </div>
+</div>
+
+<!-- ───── Month 3 ───── -->
+<div class="topic collapsed" style="border-left-color:var(--month3);margin-bottom:16px;">
+  <h3><span class="day-tag" style="background:rgba(232,131,58,0.15);color:var(--month3);">Month 3 · Day 43–62</span> ニューラルネットワーク基礎 — 実習コード</h3>
+  <div class="topic-body">
+    <div class="training" style="margin-bottom:18px;">
+      <div class="label">実行コマンド</div>
+      <code>python ai_learning_130days/ai_course/training/month3_neural_networks.py</code><br>
+      <span style="font-size:0.82rem;color:var(--text-dim);margin-top:4px;display:block;">データセット: sklearn digits (1797件 / 8×8手書き数字 / 10クラス)</span>
+    </div>
+    <p style="font-size:0.9rem;color:var(--text-dim);margin-bottom:14px;">
+      実装内容: <strong style="color:var(--text);">MLP (計算グラフ)</strong> / <strong style="color:var(--text);">ReLU / LeakyReLU</strong> / <strong style="color:var(--text);">BatchNorm 順伝播・逆伝播</strong> / <strong style="color:var(--text);">Inverted Dropout</strong> / <strong style="color:var(--text);">He 初期化</strong> / Adam / 混同行列
+    </p>
+
+    <div class="code-block">
+      <div class="code-label">month3_neural_networks.py — BatchNorm + Dropout (計算グラフ)</div>
+      <pre><span class="cm"># ── Batch Normalization ───────────────────────────</span>
+<span class="kw">class</span> <span class="fn">BatchNorm</span>:
+    <span class="kw">def</span> <span class="fn">forward</span>(self, x):
+        <span class="kw">if</span> self.training:
+            mu  = x.<span class="fn">mean</span>(axis=<span class="num">0</span>)          <span class="cm"># ミニバッチ平均</span>
+            var = x.<span class="fn">var</span>(axis=<span class="num">0</span>)           <span class="cm"># ミニバッチ分散</span>
+            self.x_hat = (x - mu) / np.<span class="fn">sqrt</span>(var + self.eps)
+            <span class="cm"># 移動平均を更新 → 推論時に使用</span>
+            self.running_mean = <span class="num">0.9</span> * self.running_mean + <span class="num">0.1</span> * mu
+            self.running_var  = <span class="num">0.9</span> * self.running_var  + <span class="num">0.1</span> * var
+        <span class="kw">else</span>:
+            self.x_hat = (x - self.running_mean) / np.<span class="fn">sqrt</span>(self.running_var + self.eps)
+        <span class="kw">return</span> self.gamma * self.x_hat + self.beta  <span class="cm"># γ・β でスケール・シフト</span>
+
+<span class="cm"># ── Inverted Dropout ──────────────────────────────</span>
+<span class="kw">class</span> <span class="fn">Dropout</span>:
+    <span class="kw">def</span> <span class="fn">forward</span>(self, x):
+        <span class="kw">if</span> self.training:
+            <span class="cm"># 1/(1-p) をかけて推論時に何もしなくて済むようにする</span>
+            self.mask = np.random.<span class="fn">binomial</span>(<span class="num">1</span>, <span class="num">1</span>-self.p, x.shape) / (<span class="num">1</span>-self.p)
+            <span class="kw">return</span> x * self.mask
+        <span class="kw">return</span> x     <span class="cm"># 推論時はそのまま通す</span>
+
+<span class="cm"># ── モデル構成 (計算グラフ) ───────────────────────</span>
+layers = [
+    <span class="fn">Affine</span>(<span class="num">64</span>, <span class="num">128</span>),   <span class="cm"># He初期化: std = √(2/in_dim)</span>
+    <span class="fn">BatchNorm</span>(<span class="num">128</span>), <span class="fn">ReLU</span>(), <span class="fn">Dropout</span>(p=<span class="num">0.3</span>),
+    <span class="fn">Affine</span>(<span class="num">128</span>, <span class="num">64</span>),
+    <span class="fn">BatchNorm</span>(<span class="num">64</span>),  <span class="fn">ReLU</span>(),
+    <span class="fn">Affine</span>(<span class="num">64</span>, <span class="num">10</span>),   <span class="cm"># 出力層 (logits)</span>
+]</pre>
+    </div>
+
+    <div class="code-block">
+      <div class="code-label">ミニバッチ学習ループ + 混同行列出力</div>
+      <pre><span class="cm"># ── 学習ループ (順伝播 → 損失 → 逆伝播 → Adam更新) ─</span>
+<span class="kw">for</span> epoch <span class="kw">in</span> <span class="fn">range</span>(<span class="num">1</span>, EPOCHS + <span class="num">1</span>):
+    <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="num">0</span>, <span class="fn">len</span>(X_tr), BATCH_SIZE):
+        xb, yb = X_tr[bidx], y_tr[bidx]
+        logits = <span class="fn">forward</span>(xb)          <span class="cm"># 計算グラフを順に通す</span>
+        loss   = loss_fn.<span class="fn">forward</span>(logits, yb)
+        <span class="fn">backward</span>()                    <span class="cm"># 全層を逆順に逆伝播</span>
+        <span class="fn">update_params</span>()               <span class="cm"># Adam でW/b/γ/β を更新</span>
+
+<span class="cm"># 推論: テストサンプル 5 件の認識結果</span>
+<span class="cm"># サンプル 1: 正解=3, 予測=3 (確信度=99.2%) ✓</span>
+<span class="cm"># サンプル 2: 正解=7, 予測=7 (確信度=97.8%) ✓</span>
+<span class="cm"># テスト精度: 0.97xx (30エポック)</span></pre>
+    </div>
+
+    <div class="inference">
+      <div class="label">期待される出力</div>
+      30エポック学習曲線 (loss / train_acc / val_acc) / テスト精度 ~97% / 10×10 混同行列 / 5件の個別推論結果と確信度
+    </div>
+  </div>
+</div>
+
+<!-- ───── Month 4 ───── -->
+<div class="topic collapsed" style="border-left-color:var(--month4);margin-bottom:16px;">
+  <h3><span class="day-tag" style="background:rgba(217,74,92,0.15);color:var(--month4);">Month 4 · Day 63–77</span> CNN — 畳み込みの数学 実習コード</h3>
+  <div class="topic-body">
+    <div class="training" style="margin-bottom:18px;">
+      <div class="label">実行コマンド</div>
+      <code>python ai_learning_130days/ai_course/training/month4_cnn.py</code><br>
+      <span style="font-size:0.82rem;color:var(--text-dim);margin-top:4px;display:block;">データセット: digits を (N,1,8,8) の1チャネル画像として CNN に入力</span>
+    </div>
+    <p style="font-size:0.9rem;color:var(--text-dim);margin-bottom:14px;">
+      実装内容: <strong style="color:var(--text);">im2col / col2im</strong> / <strong style="color:var(--text);">Conv2D 順伝播・逆伝播</strong> / <strong style="color:var(--text);">MaxPool2D</strong> / <strong style="color:var(--text);">出力サイズ計算</strong> / <strong style="color:var(--text);">ResNet Skip Connection</strong>
+    </p>
+
+    <div class="code-block">
+      <div class="code-label">month4_cnn.py — im2col で畳み込みを行列積に変換</div>
+      <pre><span class="cm"># ── im2col: 畳み込み → GEMM 変換 ─────────────────</span>
+<span class="kw">def</span> <span class="fn">im2col</span>(x, kh, kw, stride=<span class="num">1</span>, pad=<span class="num">0</span>):
+    <span class="cm">"""入力 (N,C,H,W) → (N·oh·ow, C·kh·kw) の行列に展開"""</span>
+    N, C, H, W = x.shape
+    x_pad = np.<span class="fn">pad</span>(x, ((<span class="num">0</span>,<span class="num">0</span>),(<span class="num">0</span>,<span class="num">0</span>),(pad,pad),(pad,pad)))
+    oh = (H + <span class="num">2</span>*pad - kh) // stride + <span class="num">1</span>  <span class="cm"># 出力サイズ計算</span>
+    ow = (W + <span class="num">2</span>*pad - kw) // stride + <span class="num">1</span>
+    col = np.<span class="fn">zeros</span>((N, C, kh, kw, oh, ow))
+    <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(kh):
+        <span class="kw">for</span> j <span class="kw">in</span> <span class="fn">range</span>(kw):
+            col[:,:,i,j,:,:] = x_pad[:,:, i::stride, j::stride][:,:,:oh,:ow]
+    <span class="kw">return</span> col.<span class="fn">transpose</span>(<span class="num">0</span>,<span class="num">4</span>,<span class="num">5</span>,<span class="num">1</span>,<span class="num">2</span>,<span class="num">3</span>).<span class="fn">reshape</span>(N*oh*ow, -<span class="num">1</span>), oh, ow
+
+<span class="cm"># ── Conv2D — forward ──────────────────────────────</span>
+<span class="kw">class</span> <span class="fn">Conv2D</span>:
+    <span class="kw">def</span> <span class="fn">forward</span>(self, x):
+        col, oh, ow = <span class="fn">im2col</span>(x, k, k, stride, pad)  <span class="cm"># 展開</span>
+        W_col = self.W.<span class="fn">reshape</span>(out_ch, -<span class="num">1</span>)            <span class="cm"># (out_ch, C·k·k)</span>
+        out = col @ W_col.T + self.b                  <span class="cm"># 行列積 → 畳み込み完成</span>
+        <span class="kw">return</span> out.<span class="fn">reshape</span>(N, oh, ow, -<span class="num">1</span>).<span class="fn">transpose</span>(<span class="num">0</span>,<span class="num">3</span>,<span class="num">1</span>,<span class="num">2</span>)
+
+<span class="cm"># ── ResNet Skip Connection ─────────────────────────</span>
+<span class="kw">class</span> <span class="fn">ResBlock</span>:
+    <span class="kw">def</span> <span class="fn">forward</span>(self, x):
+        h = self.conv2.<span class="fn">forward</span>(self.relu1.<span class="fn">forward</span>(self.conv1.<span class="fn">forward</span>(x)))
+        <span class="kw">return</span> self.relu2.<span class="fn">forward</span>(h + x)   <span class="cm"># ← Skip: F(x) + x</span>
+    <span class="kw">def</span> <span class="fn">backward</span>(self, grad):
+        grad = self.relu2.<span class="fn">backward</span>(grad)
+        skip = grad.<span class="fn">copy</span>()                <span class="cm"># 分岐した勾配</span>
+        grad = self.conv1.<span class="fn">backward</span>(self.relu1.<span class="fn">backward</span>(self.conv2.<span class="fn">backward</span>(grad)))
+        <span class="kw">return</span> grad + skip                 <span class="cm"># 恒等写像を通した勾配を加算</span></pre>
+    </div>
+
+    <div class="code-block">
+      <div class="code-label">出力サイズ計算 + CNN アーキテクチャ</div>
+      <pre><span class="cm"># ── 出力サイズ計算 ────────────────────────────────</span>
+<span class="cm"># 入力: (N, 1, 8, 8)</span>
+<span class="cm"># Conv(k=3, pad=1, s=1) → out = (8 + 2·1 - 3)/1 + 1 = 8</span>
+<span class="cm"># MaxPool(k=2, s=2)     → out = (8 - 2)/2 + 1 = 4</span>
+<span class="cm"># Flatten → 16 × 4 × 4 = 256</span>
+
+cnn_layers = [
+    <span class="fn">Conv2D</span>(<span class="num">1</span>, <span class="num">8</span>,  ksize=<span class="num">3</span>, pad=<span class="num">1</span>),  <span class="cm"># (N,1,8,8)→(N,8,8,8)</span>
+    <span class="fn">ReLU</span>(),
+    <span class="fn">Conv2D</span>(<span class="num">8</span>, <span class="num">16</span>, ksize=<span class="num">3</span>, pad=<span class="num">1</span>),  <span class="cm"># →(N,16,8,8)</span>
+    <span class="fn">ReLU</span>(), <span class="fn">MaxPool2D</span>(ksize=<span class="num">2</span>, stride=<span class="num">2</span>),  <span class="cm"># →(N,16,4,4)</span>
+    <span class="fn">Flatten</span>(), <span class="fn">Affine</span>(<span class="num">256</span>, <span class="num">64</span>), <span class="fn">ReLU</span>(), <span class="fn">Affine</span>(<span class="num">64</span>, <span class="num">10</span>),
+]</pre>
+    </div>
+
+    <div class="inference">
+      <div class="label">期待される出力</div>
+      出力サイズ計算の確認 / 20エポック CNN 学習曲線 / テスト精度 / Skip Connection の勾配伝播説明 / 5件の画像認識推論結果
+    </div>
+  </div>
+</div>
+
+<!-- ───── Month 5 ───── -->
+<div class="topic collapsed" style="border-left-color:var(--month5);margin-bottom:16px;">
+  <h3><span class="day-tag" style="background:rgba(155,89,182,0.15);color:var(--month5);">Month 5 · Day 78–102</span> RNN · Attention · Transformer — 実習コード</h3>
+  <div class="topic-body">
+    <div class="training" style="margin-bottom:18px;">
+      <div class="label">実行コマンド</div>
+      <code>python ai_learning_130days/ai_course/training/month5_rnn_transformer.py</code><br>
+      <span style="font-size:0.82rem;color:var(--text-dim);margin-top:4px;display:block;">データセット: シェイクスピア作品テキスト (コードに埋め込み — ダウンロード不要) / 文字レベル言語モデル</span>
+    </div>
+    <p style="font-size:0.9rem;color:var(--text-dim);margin-bottom:14px;">
+      実装内容: <strong style="color:var(--text);">LSTM (4ゲート) + BPTT</strong> / <strong style="color:var(--text);">Scaled Dot-Product Attention</strong> / <strong style="color:var(--text);">Multi-Head Attention</strong> / <strong style="color:var(--text);">RoPE</strong> / <strong style="color:var(--text);">LayerNorm</strong> / <strong style="color:var(--text);">ミニ GPT (文章生成)</strong> / KV キャッシュ解説
+    </p>
+
+    <div class="code-block">
+      <div class="code-label">month5_rnn_transformer.py — LSTM 4ゲート実装</div>
+      <pre><span class="cm"># ── LSTM Cell: 4ゲートをまとめて1つの行列で処理 ──</span>
+<span class="kw">class</span> <span class="fn">LSTMCell</span>:
+    <span class="kw">def</span> <span class="fn">forward</span>(self, x, h_prev, c_prev):
+        xh = np.<span class="fn">hstack</span>([x, h_prev])           <span class="cm"># 入力 + 前の隠れ状態</span>
+        gates = xh @ self.W + self.b             <span class="cm"># 全ゲートを一括計算</span>
+
+        f = <span class="fn">sigmoid</span>(gates[:, :H])               <span class="cm"># 忘却ゲート: 過去を何%残す</span>
+        i = <span class="fn">sigmoid</span>(gates[:, H:<span class="num">2</span>*H])            <span class="cm"># 入力ゲート: 何%取り込む</span>
+        g = np.<span class="fn">tanh</span>(gates[:, <span class="num">2</span>*H:<span class="num">3</span>*H])          <span class="cm"># セル候補: 新しい情報</span>
+        o = <span class="fn">sigmoid</span>(gates[:, <span class="num">3</span>*H:])             <span class="cm"># 出力ゲート: 何%出力する</span>
+
+        c = f * c_prev + i * g   <span class="cm"># セル状態 (長期記憶) C_t = f⊙C_{t-1} + i⊙g</span>
+        h = o * np.<span class="fn">tanh</span>(c)      <span class="cm"># 隠れ状態 (短期記憶) h_t = o⊙tanh(C_t)</span>
+        <span class="kw">return</span> h, c
+
+<span class="cm"># ── Scaled Dot-Product Attention ─────────────────</span>
+<span class="kw">def</span> <span class="fn">scaled_dot_product_attention</span>(Q, K, V, mask=<span class="kw">None</span>):
+    d_k    = Q.shape[-<span class="num">1</span>]
+    scores = Q @ K.<span class="fn">swapaxes</span>(-<span class="num">2</span>, -<span class="num">1</span>) / np.<span class="fn">sqrt</span>(d_k)  <span class="cm"># QK^T / √d_k</span>
+    <span class="kw">if</span> mask <span class="kw">is not None</span>:
+        scores = np.<span class="fn">where</span>(mask, scores, -<span class="num">1e9</span>)    <span class="cm"># 未来トークンをマスク</span>
+    attn = <span class="fn">softmax_2d</span>(scores)                     <span class="cm"># Attention 重み</span>
+    <span class="kw">return</span> attn @ V, attn                          <span class="cm"># 加重和</span></pre>
+    </div>
+
+    <div class="code-block">
+      <div class="code-label">RoPE + LayerNorm + ミニ GPT 文章生成 (推論)</div>
+      <pre><span class="cm"># ── RoPE — 回転位置エンコーディング ──────────────</span>
+<span class="kw">class</span> <span class="fn">RoPE</span>:
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, d_k, max_len=<span class="num">512</span>):
+        theta = <span class="num">1.0</span> / (<span class="num">10000</span> ** (np.<span class="fn">arange</span>(<span class="num">0</span>, d_k, <span class="num">2</span>) / d_k))
+        freqs = np.<span class="fn">outer</span>(np.<span class="fn">arange</span>(max_len), theta)
+        self.cos = np.<span class="fn">cos</span>(freqs)   <span class="cm"># 位置ごとの cos テーブル</span>
+        self.sin = np.<span class="fn">sin</span>(freqs)   <span class="cm"># 位置ごとの sin テーブル</span>
+    <span class="cm"># Q,K に回転行列を適用 → 内積が相対位置にのみ依存</span>
+
+<span class="cm"># ── GPT 文章生成 (温度スケーリング + サンプリング) ─</span>
+seed = <span class="st">"To be, or not"</span>
+generated = lstm_model.<span class="fn">generate</span>(seed, length=<span class="num">80</span>, temperature=<span class="num">0.7</span>)
+<span class="cm"># → "To be, or not to be, that is the question: Whether..."</span>
+
+<span class="cm"># KV キャッシュ: 過去の K,V を蓄積して再計算を省略</span>
+<span class="cm"># 通常: 各ステップ O(T²) → KV キャッシュ: O(T) に削減</span></pre>
+    </div>
+
+    <div class="inference">
+      <div class="label">期待される出力</div>
+      LSTM 30エポック学習曲線 / シェイクスピア風文章生成 / ミニ GPT 文章生成 / RoPE・KV キャッシュの仕組み説明 / GPT vs BERT の違い
+    </div>
+  </div>
+</div>
+
+<!-- ───── Month 6 ───── -->
+<div class="topic collapsed" style="border-left-color:var(--month6);margin-bottom:16px;">
+  <h3><span class="day-tag" style="background:rgba(224,95,160,0.15);color:var(--month6);">Month 6 · Day 103–130</span> 生成モデル · 強化学習 · NLP — 実習コード</h3>
+  <div class="topic-body">
+    <div class="training" style="margin-bottom:18px;">
+      <div class="label">実行コマンド</div>
+      <code>python ai_learning_130days/ai_course/training/month6_generative_rl.py</code><br>
+      <span style="font-size:0.82rem;color:var(--text-dim);margin-top:4px;display:block;">データセット: digits (VAE/GAN) / 5×5 グリッドワールド (Q-learning) / 埋め込みコーパス (Word2Vec) — 全て依存なし</span>
+    </div>
+    <p style="font-size:0.9rem;color:var(--text-dim);margin-bottom:14px;">
+      実装内容: <strong style="color:var(--text);">VAE (Reparameterization Trick)</strong> / <strong style="color:var(--text);">GAN (Non-saturating loss)</strong> / <strong style="color:var(--text);">DDPM (Diffusion サンプリング)</strong> / <strong style="color:var(--text);">Q-learning (Bellman方程式)</strong> / <strong style="color:var(--text);">Word2Vec Skip-gram + Negative Sampling</strong>
+    </p>
+
+    <div class="code-block">
+      <div class="code-label">month6_generative_rl.py — VAE Reparameterization Trick</div>
+      <pre><span class="cm"># ── VAE: Reparameterization Trick ────────────────</span>
+<span class="kw">class</span> <span class="fn">VAE</span>:
+    <span class="kw">def</span> <span class="fn">encode</span>(self, x):
+        h  = <span class="fn">relu</span>(x @ self.We1 + self.be1)
+        mu = h @ self.Wmu + self.bmu         <span class="cm"># 潜在分布の平均 μ</span>
+        lv = h @ self.Wlv + self.blv         <span class="cm"># 潜在分布の log σ²</span>
+        <span class="kw">return</span> mu, lv, h
+
+    <span class="kw">def</span> <span class="fn">reparameterize</span>(self, mu, log_var):
+        eps = np.random.<span class="fn">randn</span>(*mu.shape)    <span class="cm"># ε ~ N(0,I)</span>
+        std = np.<span class="fn">exp</span>(<span class="num">0.5</span> * log_var)
+        <span class="kw">return</span> mu + std * eps               <span class="cm"># z = μ + σ·ε (微分可能!)</span>
+
+    <span class="kw">def</span> <span class="fn">loss</span>(self, x, x_hat, mu, log_var):
+        recon = -np.<span class="fn">mean</span>(x * np.<span class="fn">log</span>(x_hat+<span class="num">1e-8</span>) + (<span class="num">1</span>-x)*np.<span class="fn">log</span>(<span class="num">1</span>-x_hat+<span class="num">1e-8</span>))
+        <span class="cm"># KL(q(z|x) || p(z)) = -0.5 Σ(1 + log σ² - μ² - σ²)</span>
+        kl = -<span class="num">0.5</span> * np.<span class="fn">mean</span>(<span class="num">1</span> + log_var - mu**<span class="num">2</span> - np.<span class="fn">exp</span>(log_var))
+        <span class="kw">return</span> recon + kl, recon, kl  <span class="cm"># 再構成誤差 + KL正則化</span>
+
+<span class="cm"># 生成: z ~ N(0,I) からランダムサンプリング → デコード</span>
+z_sample = np.random.<span class="fn">randn</span>(<span class="num">3</span>, <span class="num">8</span>)      <span class="cm"># 潜在空間からランダムに</span>
+x_gen, _ = vae.<span class="fn">decode</span>(z_sample)       <span class="cm"># → 64次元の生成画像</span>
+<span class="cm"># 補間: α·z1 + (1-α)·z2 → なめらかに変化する画像を生成</span></pre>
+    </div>
+
+    <div class="code-block">
+      <div class="code-label">Q-learning (Bellman方程式) + Word2Vec アナロジー推論</div>
+      <pre><span class="cm"># ── Q-learning: Bellman 方程式で Q テーブルを更新 ─</span>
+<span class="kw">for</span> ep <span class="kw">in</span> <span class="fn">range</span>(EPISODES):
+    s = <span class="num">0</span>   <span class="cm"># スタート状態</span>
+    <span class="kw">for</span> _ <span class="kw">in</span> <span class="fn">range</span>(<span class="num">100</span>):
+        <span class="cm"># ε-greedy: ε の確率で探索、1-ε で貪欲</span>
+        a = np.random.<span class="fn">randint</span>(N_ACTIONS) <span class="kw">if</span> np.random.<span class="fn">rand</span>() &lt; eps \
+            <span class="kw">else</span> Q[s].<span class="fn">argmax</span>()
+        s_next, r, done = <span class="fn">step</span>(s, a)
+        <span class="cm"># Bellman 方程式: TD 誤差を使ってQ値を更新</span>
+        td_target = r + gamma * Q[s_next].<span class="fn">max</span>() * (<span class="kw">not</span> done)
+        Q[s, a]  += alpha * (td_target - Q[s, a])
+        s = s_next; <span class="kw">if</span> done: <span class="kw">break</span>
+
+<span class="cm"># ── Word2Vec ベクトル演算アナロジー ──────────────</span>
+<span class="cm"># king - man + woman ≈ queen</span>
+v = U[word2id[<span class="st">"king"</span>]] - U[word2id[<span class="st">"man"</span>]] + U[word2id[<span class="st">"woman"</span>]]
+<span class="cm"># コサイン類似度で最近傍を検索 → "queen" が上位に現れれば成功</span></pre>
+    </div>
+
+    <div class="code-block">
+      <div class="code-label">Diffusion DDPM — 前向き (ノイズ追加) + 逆向き (生成)</div>
+      <pre><span class="cm"># ── 前向きプロセス: x_0 に t ステップのノイズを加算 ─</span>
+<span class="kw">def</span> <span class="fn">q_sample</span>(x0, t):
+    <span class="cm"># ᾱ_t = Π_{i=1}^t (1-β_i) を使って 1ステップで x_t を得る</span>
+    ab = alpha_bar[t][:, <span class="kw">None</span>]          <span class="cm"># ᾱ_t</span>
+    eps = np.random.<span class="fn">randn</span>(*x0.shape)
+    <span class="kw">return</span> np.<span class="fn">sqrt</span>(ab) * x0 + np.<span class="fn">sqrt</span>(<span class="num">1</span>-ab) * eps, eps
+
+<span class="cm"># ── 逆向きプロセス (DDPM サンプリング): x_T → x_0 ─</span>
+x = np.random.<span class="fn">randn</span>(<span class="num">5</span>, DATA_DIM)      <span class="cm"># 純粋ノイズ x_T から開始</span>
+<span class="kw">for</span> t_val <span class="kw">in</span> <span class="fn">reversed</span>(<span class="fn">range</span>(T_DIFF)):
+    eps_pred = noise_net.<span class="fn">forward</span>(x, t_arr)     <span class="cm"># ε_θ(x_t, t) でノイズ予測</span>
+    coeff = (<span class="num">1</span> - alpha_t) / np.<span class="fn">sqrt</span>(<span class="num">1</span> - ab_t)
+    x = (x - coeff * eps_pred) / np.<span class="fn">sqrt</span>(alpha_t)  <span class="cm"># ノイズを除去</span>
+    <span class="kw">if</span> t_val > <span class="num">0</span>: x += np.<span class="fn">sqrt</span>(betas[t_val]) * np.random.<span class="fn">randn</span>(*x.shape)</pre>
+    </div>
+
+    <div class="inference">
+      <div class="label">期待される出力</div>
+      VAE 30エポック学習曲線 + 潜在空間補間 / GAN Generator vs Discriminator loss / DDPM 逆拡散サンプリング結果 / Q-learning 3000エポック 最適経路 (0→24ゴール) / Word2Vec "king-man+woman≈queen" アナロジー検証
+    </div>
+  </div>
+</div>
+
 </div><!-- /container -->
 <button id="back-to-top" onclick="window.scrollTo({top:0,behavior:'smooth'})" title="先頭へ戻る">↑</button>
 <script>
